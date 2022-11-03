@@ -213,11 +213,15 @@ fn tile_interaction(
                 sprite.color = tile_colours.hover_color;
             }
             Interaction::None => {
-                sprite.color = if tile.is_even() {
-                    tile_colours.even_grass
+                if tile.cost == 10 {
+                    sprite.color = Color::DARK_GRAY;
                 } else {
-                    tile_colours.odd_grass
-                };
+                    sprite.color = if tile.is_even() {
+                        tile_colours.even_grass
+                    } else {
+                        tile_colours.odd_grass
+                    };
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
 use bevy::{math::vec2, prelude::*};
 
 use crate::grid::{self, Coords, Grid};
-// use rand::prelude::*;
+use rand::prelude::*;
 
 pub struct FlowFieldPlugin;
 
@@ -27,6 +27,14 @@ pub fn generate_flow_field_grid(
     grid: Res<Grid>,
     mut q_tiles: Query<&mut grid::Tile>,
 ) {
+    // reset
+    let mut rng = rand::thread_rng();
+    for mut t in q_tiles.iter_mut() {
+        t.cost = if rng.gen_bool(0.5) { 1 } else { 10 };
+        t.weight = u32::MAX;
+        t.dir = None;
+    }
+
     let width = grid::GRID_WIDTH;
     let height = grid::GRID_HEIGHT;
 

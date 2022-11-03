@@ -1,11 +1,13 @@
 use bevy::{math::vec2, prelude::*};
+
+use crate::grid::{self, Coords, Grid};
 // use rand::prelude::*;
 
 pub struct FlowFieldPlugin;
 
 impl Plugin for FlowFieldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(test_flow);
+        // app.add_startup_system(test_flow);
     }
 }
 
@@ -18,6 +20,115 @@ struct Tile {
 
 fn test_flow() {
     generate_flow_field(2, 2);
+}
+
+pub fn generate_flow_field_grid(
+    destination: Coords,
+    grid: Res<Grid>,
+    mut q_tiles: Query<&mut grid::Tile>,
+) {
+    let width = grid::GRID_WIDTH;
+    let height = grid::GRID_HEIGHT;
+
+    let destination_index = calculate_index(destination.x, destination.y, height);
+    if let Some(&dest_ent) = grid.tiles.get(destination_index) {
+        if let Ok(mut destination_node) = q_tiles.get_mut(dest_ent) {
+            destination_node.weight = 0;
+
+            let mut open_set = Vec::new();
+            let mut closed_set: Vec<usize> = Vec::new();
+
+            open_set.push(destination_index);
+
+            while !open_set.is_empty() {
+                // get the lowest weight in the open set
+                let mut current_node_index = None;
+                let mut current_lowest_weight = u32::MAX;
+                for &i in open_set.iter() {
+                    if let Some(&entity) = grid.tiles.get(i) {
+                        if let Ok(tile) = q_tiles.get(entity) {
+                            if tile.weight < current_lowest_weight {
+                                current_lowest_weight = tile.weight;
+                                current_node_index = Some(i);
+                            }
+                        }
+                    }
+                }
+                if let Some(current_node_index) = current_node_index {
+                    // remove from the open list
+                    for (i, val) in open_set.iter().enumerate() {
+                        if *val == current_node_index {
+                            open_set.remove(i);
+                            break;
+                        }
+                    }
+
+                    closed_set.push(current_node_index);
+
+                    let neighbours =
+                        get_neighbour_indicies(current_node_index, width, height, false);
+                    let current_node;
+                    if let Some(&entity) = grid.tiles.get(current_node_index) {
+                        if let Ok(tile) = q_tiles.get(entity).cloned() {
+                            current_node = tile;
+
+                            for n_index in neighbours {
+                                if closed_set.contains(&n_index) {
+                                    continue;
+                                }
+
+                                if let Some(&entity) = grid.tiles.get(n_index) {
+                                    if let Ok(mut neighbour_node) = q_tiles.get_mut(entity) {
+                                        let tentative_weight =
+                                            current_node.weight + neighbour_node.cost as u32;
+
+                                        if tentative_weight < neighbour_node.weight {
+                                            neighbour_node.weight = tentative_weight;
+
+                                            if !open_set.contains(&n_index) {
+                                                open_set.push(n_index);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // calculate direction
+            for i in 0..grid.tiles.len() {
+                let neighbours = get_neighbour_indicies(i, width, height, true);
+
+                let smallest_index = neighbours
+                    .iter()
+                    .filter(|x| grid.tiles.get(**x).is_some())
+                    .min_by_key(|x| q_tiles.get(*grid.tiles.get(**x).unwrap()).unwrap().weight)
+                    .copied()
+                    .unwrap();
+
+                if let Some(&entity) = grid.tiles.get(i) {
+                    if let Ok(mut tile) = q_tiles.get_mut(entity) {
+                        if tile.weight == 0 {
+                            tile.dir = Some(Vec2::ZERO);
+                        } else {
+                            let small_x = smallest_index / height;
+                            let small_y = smallest_index % height;
+
+                            let my_x = i / height;
+                            let my_y = i % height;
+
+                            let dir =
+                                vec2(small_x as f32 - my_x as f32, small_y as f32 - my_y as f32);
+                            tile.dir = Some(dir);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!("Updated flow field");
 }
 
 fn generate_flow_field(destination_x: usize, destination_y: usize) {
@@ -163,7 +274,7 @@ fn generate_flow_field(destination_x: usize, destination_y: usize) {
             };
             print!("{}", c);
         }
-        println!("");
+        println!();
     }
 }
 

@@ -1,25 +1,28 @@
 use bevy::prelude::*;
 
-use crate::MouseWorldPos;
+use crate::{flow_field::generate_flow_field_grid, MouseWorldPos};
 
 pub struct GridPlugin;
 
 impl Plugin for GridPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Grid { tiles: Vec::new() })
-            .insert_resource(TileColours::new())
-            .add_event::<ClearSelectionsEvent>()
-            .add_startup_system(setup_grid)
-            .add_system(clear_interaction.before(check_interaction))
-            .add_system(check_interaction.before(tile_interaction))
-            .add_system(tile_interaction.before(clear_selection))
-            .add_system(clear_selection);
+        app.insert_resource(Grid {
+            tiles: Vec::with_capacity(GRID_WIDTH * GRID_HEIGHT),
+        })
+        .insert_resource(TileColours::new())
+        .add_event::<ClearSelectionsEvent>()
+        .add_startup_system(setup_grid)
+        .add_system(clear_interaction.before(check_interaction))
+        .add_system(check_interaction.before(tile_interaction))
+        .add_system(tile_interaction.before(clear_selection))
+        .add_system(clear_selection)
+        .add_system(gen_flow_field);
     }
 }
 
-const GRID_WIDTH: usize = 20;
-const GRID_HEIGHT: usize = 20;
-const TILE_SIZE: f32 = 32.0;
+pub const GRID_WIDTH: usize = 20;
+pub const GRID_HEIGHT: usize = 20;
+pub const TILE_SIZE: f32 = 32.0;
 
 // events
 struct ClearSelectionsEvent;
@@ -30,23 +33,48 @@ pub struct Coords {
     pub y: usize,
 }
 
-#[derive(Component)]
-struct Tile {
-    coords: Coords,
+impl Coords {
+    pub fn from_vec2(pos: Vec2) -> Self {
+        let x = (((GRID_WIDTH - 1) as f32 * 0.5 * TILE_SIZE) + TILE_SIZE * 0.5 + pos.x) / TILE_SIZE;
+        let y =
+            (((GRID_HEIGHT - 1) as f32 * 0.5 * TILE_SIZE) + TILE_SIZE * 0.5 + pos.y) / TILE_SIZE;
+
+        Coords {
+            x: x as usize,
+            y: y as usize,
+        }
+    }
+}
+
+#[derive(Component, Clone, Copy)]
+pub struct Tile {
+    pub coords: Coords,
+    pub cost: u8,
+    pub weight: u32,
+    pub dir: Option<Vec2>,
 }
 
 impl Tile {
+    fn new(x: usize, y: usize) -> Self {
+        Tile {
+            coords: Coords { x, y },
+            cost: 1,
+            weight: u32::MAX,
+            dir: None,
+        }
+    }
+
     fn is_even(&self) -> bool {
         (self.coords.x + self.coords.y) % 2 == 0
     }
 }
 
-struct Grid {
-    tiles: Vec<Entity>,
+pub struct Grid {
+    pub tiles: Vec<Entity>,
 }
 
 impl Grid {
-    fn get_vec2(&self, pos: Vec2) -> Option<Entity> {
+    pub fn get_vec2(&self, pos: Vec2) -> Option<Entity> {
         let x = (((GRID_WIDTH - 1) as f32 * 0.5 * TILE_SIZE) + TILE_SIZE * 0.5 + pos.x) / TILE_SIZE;
         let y =
             (((GRID_HEIGHT - 1) as f32 * 0.5 * TILE_SIZE) + TILE_SIZE * 0.5 + pos.y) / TILE_SIZE;
@@ -58,7 +86,7 @@ impl Grid {
         self.get_xy(x as usize, y as usize)
     }
 
-    fn get_xy(&self, x: usize, y: usize) -> Option<Entity> {
+    pub fn get_xy(&self, x: usize, y: usize) -> Option<Entity> {
         if x >= GRID_WIDTH || y >= GRID_HEIGHT {
             return None;
         }
@@ -107,9 +135,7 @@ fn setup_grid(mut commands: Commands, mut grid: ResMut<Grid>, tile_colours: Res<
         for j in 0..GRID_HEIGHT {
             let pos = offset + Vec3::new(i as f32 * TILE_SIZE, j as f32 * TILE_SIZE, 0.0);
 
-            let tile = Tile {
-                coords: Coords { x: i, y: j },
-            };
+            let tile = Tile::new(i, j);
 
             let color = if tile.is_even() {
                 tile_colours.even_grass
@@ -207,6 +233,18 @@ fn clear_selection(
         for entity in q_selection.iter() {
             commands.entity(entity).remove::<Selection>();
         }
+    }
+}
+
+fn gen_flow_field(
+    keyboard: Res<Input<KeyCode>>,
+    mouse: Res<MouseWorldPos>,
+    grid: Res<Grid>,
+    mut q_tiles: Query<&mut Tile>,
+) {
+    if keyboard.just_pressed(KeyCode::F) {
+        let dest = Coords::from_vec2(mouse.0);
+        generate_flow_field_grid(dest, grid, q_tiles);
     }
 }
 

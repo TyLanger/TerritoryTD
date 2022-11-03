@@ -1,5 +1,6 @@
 use bevy::{prelude::*, render::camera::RenderTarget};
 
+mod enemy;
 mod flow_field;
 mod grid;
 
@@ -10,6 +11,7 @@ impl Plugin for GamePlugin {
         app.insert_resource(MouseWorldPos(Vec2::ONE * 10000.0))
             .add_plugin(flow_field::FlowFieldPlugin)
             .add_plugin(grid::GridPlugin)
+            .add_plugin(enemy::EnemyPlugin)
             .add_system(update_mouse_position);
     }
 }

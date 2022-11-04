@@ -3,6 +3,7 @@ use bevy::{prelude::*, render::camera::RenderTarget};
 mod enemy;
 mod flow_field;
 mod grid;
+mod wall;
 
 pub struct GamePlugin;
 
@@ -12,6 +13,7 @@ impl Plugin for GamePlugin {
             .add_plugin(flow_field::FlowFieldPlugin)
             .add_plugin(grid::GridPlugin)
             .add_plugin(enemy::EnemyPlugin)
+            .add_plugin(wall::WallPlugin)
             .add_system(update_mouse_position);
     }
 }

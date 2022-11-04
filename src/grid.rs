@@ -44,6 +44,14 @@ impl Coords {
             y: y as usize,
         }
     }
+
+    pub fn get_vec2(&self) -> Vec2 {
+        let offset = Vec2::new(
+            -0.5 * ((GRID_WIDTH - 1) as f32) * TILE_SIZE,
+            -0.5 * ((GRID_HEIGHT - 1) as f32) * TILE_SIZE,
+        );
+        offset + Vec2::new(self.x as f32 * TILE_SIZE, self.y as f32 * TILE_SIZE)
+    }
 }
 
 #[derive(Component, Clone, Copy)]
@@ -51,7 +59,7 @@ pub struct Tile {
     pub coords: Coords,
     pub cost: u8,
     pub weight: u32,
-    pub dir: Option<Vec2>,
+    pub next_pos: Option<Vec2>,
 }
 
 impl Tile {
@@ -60,7 +68,7 @@ impl Tile {
             coords: Coords { x, y },
             cost: 1,
             weight: u32::MAX,
-            dir: None,
+            next_pos: None,
         }
     }
 
@@ -96,6 +104,7 @@ impl Grid {
         ent.copied()
     }
 
+    #[allow(dead_code)]
     fn get_coords(&self, coords: Coords) -> Option<Entity> {
         self.get_xy(coords.x, coords.y)
     }
@@ -122,7 +131,7 @@ impl TileColours {
 }
 
 #[derive(Component)]
-struct Selection;
+pub struct Selection;
 
 fn setup_grid(mut commands: Commands, mut grid: ResMut<Grid>, tile_colours: Res<TileColours>) {
     let offset = Vec3::new(
@@ -162,8 +171,8 @@ fn setup_grid(mut commands: Commands, mut grid: ResMut<Grid>, tile_colours: Res<
     }
 }
 
-fn clear_interaction(mut q_tiles: Query<(&mut Interaction, Option<&Selection>), With<Tile>>) {
-    for (mut interaction, o_selection) in q_tiles.iter_mut() {
+fn clear_interaction(mut q_tiles: Query<&mut Interaction, With<Tile>>) {
+    for mut interaction in q_tiles.iter_mut() {
         // clear all interactions
         *interaction = Interaction::None;
     }
@@ -213,14 +222,20 @@ fn tile_interaction(
                 sprite.color = tile_colours.hover_color;
             }
             Interaction::None => {
-                if tile.cost == 10 {
+                let c = Color::DARK_GRAY;
+
+                // check so you're not replacing every frame
+                if tile.cost == 10 && sprite.color != c {
                     sprite.color = Color::DARK_GRAY;
                 } else {
-                    sprite.color = if tile.is_even() {
-                        tile_colours.even_grass
-                    } else {
-                        tile_colours.odd_grass
-                    };
+                    let even = tile.is_even();
+                    if even {
+                        if sprite.color != tile_colours.even_grass {
+                            sprite.color = tile_colours.even_grass;
+                        }
+                    } else if sprite.color != tile_colours.odd_grass {
+                        sprite.color = tile_colours.odd_grass;
+                    }
                 }
             }
         }
@@ -244,25 +259,10 @@ fn gen_flow_field(
     keyboard: Res<Input<KeyCode>>,
     mouse: Res<MouseWorldPos>,
     grid: Res<Grid>,
-    mut q_tiles: Query<&mut Tile>,
+    q_tiles: Query<&mut Tile>,
 ) {
     if keyboard.just_pressed(KeyCode::F) {
         let dest = Coords::from_vec2(mouse.0);
         generate_flow_field_grid(dest, grid, q_tiles);
     }
 }
-
-// fn check_mouse(
-//     mut q_tiles: Query<&mut Sprite, With<Tile>>,
-//     grid: Res<Grid>,
-//     tile_colours: Res<TileColours>,
-//     mouse: Res<MouseWorldPos>,
-// ) {
-//     let get_vec2 = grid.get_vec2(mouse.0);
-//     let hovered = get_vec2;
-//     if let Some(ent) = hovered {
-//         if let Ok(mut sprite) = q_tiles.get_mut(ent) {
-//             sprite.color = tile_colours.hover_color;
-//         }
-//     }
-// }

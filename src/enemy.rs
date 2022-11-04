@@ -11,7 +11,21 @@ impl Plugin for EnemyPlugin {
 }
 
 #[derive(Component)]
-struct Enemy;
+struct Enemy {
+    dir: Vec2,
+    pos: Option<Vec2>,
+    speed: f32,
+}
+
+impl Enemy {
+    fn new() -> Self {
+        Enemy {
+            dir: Vec2::new(1.0, 0.0),
+            pos: None,
+            speed: 25.0,
+        }
+    }
+}
 
 fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {
     if keyboard.just_pressed(KeyCode::E) {
@@ -33,7 +47,7 @@ fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {
                         transform: Transform::from_translation(offset + pos),
                         ..default()
                     })
-                    .insert(Enemy);
+                    .insert(Enemy::new());
             }
         }
     }
@@ -42,21 +56,45 @@ fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {
 fn move_enemy(
     grid: Res<Grid>,
     q_tiles: Query<(&Transform, &Tile), Without<Enemy>>,
-    mut q_enemies: Query<&mut Transform, With<Enemy>>,
+    mut q_enemies: Query<(&mut Transform, &mut Enemy)>,
     time: Res<Time>,
 ) {
-    for mut trans in q_enemies.iter_mut() {
-        let mut dir = Vec3::new(-25.0, 0.0, 0.0);
+    for (mut trans, mut enemy) in q_enemies.iter_mut() {
+        let mut want_pos = false;
+        if let Some(pos) = enemy.pos {
+            // you have a pos
+            if trans.translation.truncate().distance_squared(pos) < 1.0 {
+                // close to pos
+                // find a new one
+                want_pos = true;
+            } else {
+                // keep going where you're going
+            }
+        } else {
+            // find one if possible
+            want_pos = true;
+        }
 
-        if let Some(entity) = grid.get_vec2(trans.translation.truncate()) {
-            if let Ok((_transform, tile)) = q_tiles.get(entity) {
-                if let Some(dir_tile) = tile.dir {
-                    // trans.translation += dir.extend(0.0) * time.delta_seconds();
-                    dir = dir_tile.extend(0.0) * 25.0;
+        // let mut dir = Vec3::new(-25.0, 0.0, 0.0);
+        if want_pos {
+            if let Some(entity) = grid.get_vec2(trans.translation.truncate()) {
+                if let Ok((_transform, tile)) = q_tiles.get(entity) {
+                    if let Some(dir_tile) = tile.next_pos {
+                        // trans.translation += dir.extend(0.0) * time.delta_seconds();
+                        // dir = dir_tile.extend(0.0) * 25.0;
+                        enemy.pos = Some(dir_tile);
+                        enemy.dir = (dir_tile - trans.translation.truncate()).normalize_or_zero();
+                    } else {
+                        // at destination
+                        // stop moving
+                        if enemy.dir != Vec2::ZERO {
+                            enemy.dir = Vec2::ZERO;
+                        }
+                    }
                 }
             }
         }
 
-        trans.translation += dir * time.delta_seconds();
+        trans.translation += enemy.dir.extend(0.0) * enemy.speed * time.delta_seconds();
     }
 }

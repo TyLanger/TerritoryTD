@@ -16,7 +16,9 @@ impl Plugin for GridPlugin {
         .add_system(check_interaction.before(tile_interaction))
         .add_system(tile_interaction.before(clear_selection))
         .add_system(clear_selection)
-        .add_system(gen_flow_field);
+        .add_system(gen_flow_field)
+        .add_system(change_alegience)
+        .add_system(change_colour_animation);
     }
 }
 
@@ -60,6 +62,7 @@ pub struct Tile {
     pub cost: u8,
     pub weight: u32,
     pub next_pos: Option<Vec2>,
+    pub tile_type: TileType,
 }
 
 impl Tile {
@@ -69,12 +72,62 @@ impl Tile {
             cost: 1,
             weight: u32::MAX,
             next_pos: None,
+            tile_type: TileType::Neutral,
         }
     }
 
     fn is_even(&self) -> bool {
         (self.coords.x + self.coords.y) % 2 == 0
     }
+
+    /// Updates the tile's colour to what it should be based on its [`TileType`] and `self.is_even()`.
+    ///  
+    /// `sprite` is the [`Sprite`] to update.
+    /// `tile_colours` is the Res that holds the possible colours.
+    fn update_colour(&self, sprite: &mut Sprite, tile_colours: &Res<TileColours>) {
+        match self.tile_type {
+            TileType::Neutral => {
+                if self.is_even() {
+                    if sprite.color != tile_colours.even_grass {
+                        sprite.color = tile_colours.even_grass;
+                    }
+                } else {
+                    if sprite.color != tile_colours.odd_grass {
+                        sprite.color = tile_colours.odd_grass;
+                    }
+                }
+            }
+            TileType::Friendly => {
+                if self.is_even() {
+                    if sprite.color != tile_colours.even_friend {
+                        sprite.color = tile_colours.even_friend;
+                    }
+                } else {
+                    if sprite.color != tile_colours.odd_friend {
+                        sprite.color = tile_colours.odd_friend;
+                    }
+                }
+            }
+            TileType::Hostile => {
+                if self.is_even() {
+                    if sprite.color != tile_colours.even_hostile {
+                        sprite.color = tile_colours.even_hostile;
+                    }
+                } else {
+                    if sprite.color != tile_colours.odd_hostile {
+                        sprite.color = tile_colours.odd_hostile;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum TileType {
+    Neutral,
+    Friendly,
+    Hostile,
 }
 
 pub struct Grid {
@@ -113,6 +166,10 @@ impl Grid {
 struct TileColours {
     even_grass: Color,
     odd_grass: Color,
+    even_friend: Color,
+    odd_friend: Color,
+    even_hostile: Color,
+    odd_hostile: Color,
     hover_color: Color,
     select_color: Color,
 }
@@ -124,6 +181,12 @@ impl TileColours {
             even_grass: Color::rgb_u8(0x3e, 0x89, 0x48),
             // #265c42
             odd_grass: Color::rgb_u8(0x26, 0x5c, 0x42),
+            // #124e89 #0099db
+            odd_friend: Color::rgb_u8(0x12, 0x4e, 0x89),
+            even_friend: Color::rgb_u8(0x00, 0x99, 0xdb),
+            // #3e2731 #a22633
+            odd_hostile: Color::rgb_u8(0x3e, 0x27, 0x31),
+            even_hostile: Color::rgb_u8(0xa2, 0x26, 0x33),
             hover_color: Color::ALICE_BLUE,
             select_color: Color::MIDNIGHT_BLUE,
         }
@@ -207,12 +270,18 @@ fn check_interaction(
     }
 }
 
+/// Handles the interaction
+/// 
+/// `Clicked` adds [`Selected`]<br />
+/// `Hovered` changes the colour to a highlight<br />
+/// `None` changes the colour back to its base   
 fn tile_interaction(
     mut commands: Commands,
-    mut q_interaction: Query<(Entity, &Interaction, &mut Sprite, &Tile), Without<Selection>>,
+    mut q_interaction: Query<(Entity, &Interaction, &mut Sprite, &Tile), (Without<ColourChanger>, Without<Selection>)>,
     tile_colours: Res<TileColours>,
 ) {
     for (entity, interaction, mut sprite, tile) in q_interaction.iter_mut() {
+        // Without<ColourChanger> to skip tiles that are currently animating
         match *interaction {
             Interaction::Clicked => {
                 sprite.color = tile_colours.select_color;
@@ -222,21 +291,7 @@ fn tile_interaction(
                 sprite.color = tile_colours.hover_color;
             }
             Interaction::None => {
-                let c = Color::DARK_GRAY;
-
-                // check so you're not replacing every frame
-                if tile.cost == 10 && sprite.color != c {
-                    sprite.color = Color::DARK_GRAY;
-                } else {
-                    let even = tile.is_even();
-                    if even {
-                        if sprite.color != tile_colours.even_grass {
-                            sprite.color = tile_colours.even_grass;
-                        }
-                    } else if sprite.color != tile_colours.odd_grass {
-                        sprite.color = tile_colours.odd_grass;
-                    }
-                }
+                tile.update_colour(&mut sprite, &tile_colours);
             }
         }
     }
@@ -264,5 +319,83 @@ fn gen_flow_field(
     if keyboard.just_pressed(KeyCode::F) {
         let dest = Coords::from_vec2(mouse.0);
         generate_flow_field_grid(dest, grid, q_tiles);
+    }
+}
+
+fn change_alegience(
+    mut commands: Commands,
+    mut q_selection: Query<(Entity, &mut Tile), With<Selection>>,
+    keyboard: Res<Input<KeyCode>>,
+    mut ev_clear: EventWriter<ClearSelectionsEvent>,
+) {
+    // c for colour
+    if keyboard.just_pressed(KeyCode::C) {
+        ev_clear.send(ClearSelectionsEvent);
+        for (entity, mut tile) in q_selection.iter_mut() {
+            match tile.tile_type {
+                TileType::Neutral => {
+                    tile.tile_type = TileType::Friendly;
+                }
+                TileType::Friendly => {
+                    tile.tile_type = TileType::Hostile;
+                }
+                TileType::Hostile => {
+                    tile.tile_type = TileType::Neutral;
+                }
+            }
+            commands.entity(entity).insert(ColourChanger {
+                timer: Timer::from_seconds(0.5, false),
+            });
+        }
+    }
+}
+
+#[derive(Component)]
+struct ColourChanger {
+    // new_colour: Color,
+    timer: Timer,
+}
+
+fn change_colour_animation(
+    mut commands: Commands,
+    mut q_interaction: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut Sprite,
+            &Tile,
+            &mut ColourChanger,
+        ),
+        Without<Selection>,
+    >,
+    tile_colours: Res<TileColours>,
+    time: Res<Time>,
+) {
+    for (entity, mut trans, mut sprite, tile, mut changer) in q_interaction.iter_mut() {
+        if changer.timer.tick(time.delta()).just_finished() {
+            trans.scale = Vec3::ONE;
+            commands.entity(entity).remove::<ColourChanger>();
+        } else {
+            if changer.timer.percent() < 0.5 {
+                // old colour
+                trans.scale = Vec3::lerp(
+                    Vec3::ONE,
+                    Vec3::new(1.0, 0.0, 1.0),
+                    // convert 0.0-0.5 to 0.0-1.0
+                    changer.timer.percent() * 2.0,
+                );
+            } else {
+
+                tile.update_colour(&mut sprite, &tile_colours);
+
+                
+                trans.scale = Vec3::lerp(
+                    Vec3::new(1.0, 0.0, 1.0),
+                    Vec3::ONE,
+                    // convert 0.5-1.0 to 0.0-1.0
+                    (changer.timer.percent() - 0.5) * 2.0,
+                );
+            }
+        }
     }
 }

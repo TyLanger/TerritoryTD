@@ -98,6 +98,10 @@ pub fn generate_flow_field_grid(
             for i in 0..grid.tiles.len() {
                 let neighbours = get_neighbour_indicies(i, width, height, true);
 
+                // to fix the diagonals
+                // could make it so you can only take a diagonal
+                // if both of the adjacent tiles are open.
+                // stops you cutting a corner, but can still go diagonal out in the open
                 let smallest_index = neighbours
                     .iter()
                     .filter(|x| grid.tiles.get(**x).is_some())

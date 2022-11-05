@@ -66,6 +66,10 @@ fn move_enemy(
             if trans.translation.truncate().distance_squared(pos) < 1.0 {
                 // close to pos
                 // find a new one
+
+                // this is laggy
+                // will only update when reaching a tile, even if the
+                // flow field was recalculated
                 want_pos = true;
             } else {
                 // keep going where you're going

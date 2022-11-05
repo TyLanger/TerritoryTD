@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use crate::{flow_field::generate_flow_field_grid, MouseWorldPos};
+use crate::{
+    flow_field::{generate_flow_field_grid},
+    MouseWorldPos,
+};
 
 pub struct GridPlugin;
 
@@ -29,7 +32,7 @@ pub const TILE_SIZE: f32 = 32.0;
 // events
 struct ClearSelectionsEvent;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Coords {
     pub x: usize,
     pub y: usize,
@@ -161,6 +164,44 @@ impl Grid {
     fn get_coords(&self, coords: Coords) -> Option<Entity> {
         self.get_xy(coords.x, coords.y)
     }
+
+    fn get_neighbours(&self, coords: Coords, eight_connected: bool) -> Vec<Option<Entity>> {
+        let mut v = Vec::new();
+
+        let x = coords.x;
+        let y = coords.y;
+
+        // top
+        v.push(self.get_xy(x, y + 1));
+        if eight_connected {
+            // top right
+            v.push(self.get_xy(x + 1, y + 1));
+        }
+        // right
+        v.push(self.get_xy(x + 1, y));
+        if y > 0 {
+            if eight_connected {
+                // bottom right
+                v.push(self.get_xy(x + 1, y - 1));
+            }
+            // bottom
+            v.push(self.get_xy(x, y - 1));
+            if x > 0 && eight_connected {
+                // bottom left
+                v.push(self.get_xy(x - 1, y - 1));
+            }
+        }
+        if x > 0 {
+            // left
+            v.push(self.get_xy(x - 1, y));
+            if eight_connected {
+                // up left
+                v.push(self.get_xy(x - 1, y + 1));
+            }
+        }
+
+        v
+    }
 }
 
 struct TileColours {
@@ -271,13 +312,16 @@ fn check_interaction(
 }
 
 /// Handles the interaction
-/// 
+///
 /// `Clicked` adds [`Selected`]<br />
 /// `Hovered` changes the colour to a highlight<br />
 /// `None` changes the colour back to its base   
 fn tile_interaction(
     mut commands: Commands,
-    mut q_interaction: Query<(Entity, &Interaction, &mut Sprite, &Tile), (Without<ColourChanger>, Without<Selection>)>,
+    mut q_interaction: Query<
+        (Entity, &Interaction, &mut Sprite, &Tile),
+        (Without<ColourChanger>, Without<Selection>),
+    >,
     tile_colours: Res<TileColours>,
 ) {
     for (entity, interaction, mut sprite, tile) in q_interaction.iter_mut() {
@@ -343,9 +387,11 @@ fn change_alegience(
                     tile.tile_type = TileType::Neutral;
                 }
             }
-            commands.entity(entity).insert(ColourChanger {
-                timer: Timer::from_seconds(0.5, false),
-            });
+            commands.entity(entity).insert(ColourChanger::new(1));
+            // {
+            //     timer: Timer::from_seconds(0.5, false),
+            //     neighbour_count: 0,
+            // });
         }
     }
 }
@@ -354,6 +400,16 @@ fn change_alegience(
 struct ColourChanger {
     // new_colour: Color,
     timer: Timer,
+    neighbour_count: u16,
+}
+
+impl ColourChanger {
+    fn new(count: u16) -> Self {
+        ColourChanger {
+            timer: Timer::from_seconds(0.5, false),
+            neighbour_count: count,
+        }
+    }
 }
 
 fn change_colour_animation(
@@ -363,15 +419,17 @@ fn change_colour_animation(
             Entity,
             &mut Transform,
             &mut Sprite,
-            &Tile,
+            &mut Tile,
             &mut ColourChanger,
         ),
         Without<Selection>,
     >,
+    mut q_without_changer: Query<&mut Tile, Without<ColourChanger>>,
+    grid: Res<Grid>,
     tile_colours: Res<TileColours>,
     time: Res<Time>,
 ) {
-    for (entity, mut trans, mut sprite, tile, mut changer) in q_interaction.iter_mut() {
+    for (entity, mut trans, mut sprite, mut tile, mut changer) in q_interaction.iter_mut() {
         if changer.timer.tick(time.delta()).just_finished() {
             trans.scale = Vec3::ONE;
             commands.entity(entity).remove::<ColourChanger>();
@@ -384,11 +442,62 @@ fn change_colour_animation(
                     // convert 0.0-0.5 to 0.0-1.0
                     changer.timer.percent() * 2.0,
                 );
-            } else {
 
+                let in_range = changer.timer.percent() > 0.3 && changer.timer.percent() < 0.35;
+                if changer.neighbour_count > 0 && in_range {
+                    // propage to neighbours
+                    // tile.coords
+                    let neighbours = grid.get_neighbours(tile.coords, false);
+
+                    for n in neighbours.iter() {
+                        if let Some(ent) = n {
+                            // only give it a colour changer if it doesn't already have one
+                            // doesn't quite work when 2 of these neighbours
+                            // share the same neighbour
+                            // they both add ColourChanger to it this frame (resetting it)
+                            // but they increment the tile_type twice
+                            // I guess it works if I set the tile type instead of cycling it.
+                            // problem is in the q_interaction loop. Those can collide
+                            // not this loop
+                            // this is fairly sloppy anyway and needs to be redone.
+                            // should be set(type)
+                            // if !type, do flipping and pass it on
+                            // otherwise, you'd still need to pass it on 
+                            // in case the tiles past you aren't the right type
+                            // I wonder if it is easier to just grab all the tiles at the start
+                            // and then offset the times somehow?
+                            // each one gets a different frame where it starts,
+                            // then they all start at once.
+                            if let Ok(mut n_tile) = q_without_changer.get_mut(*ent) {
+                            // if q_without_changer.contains(*ent) {
+                                // println!(
+                                //     "Changing the colour of index {:?} from {:?}",
+                                //     *n, n_tile.coords
+                                // );
+                                
+
+                                match n_tile.tile_type {
+                                    TileType::Neutral => {
+                                        n_tile.tile_type = TileType::Friendly;
+                                    }
+                                    TileType::Friendly => {
+                                        n_tile.tile_type = TileType::Hostile;
+                                    }
+                                    TileType::Hostile => {
+                                        n_tile.tile_type = TileType::Neutral;
+                                    }
+                                }
+
+                                commands
+                                    .entity(*ent)
+                                    .insert(ColourChanger::new(changer.neighbour_count - 1));
+                            }
+                        }
+                    }
+                }
+            } else {
                 tile.update_colour(&mut sprite, &tile_colours);
 
-                
                 trans.scale = Vec3::lerp(
                     Vec3::new(1.0, 0.0, 1.0),
                     Vec3::ONE,

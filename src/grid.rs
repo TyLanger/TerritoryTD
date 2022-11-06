@@ -1,9 +1,8 @@
+use std::f32::consts::FRAC_PI_2;
+
 use bevy::prelude::*;
 
-use crate::{
-    flow_field::{generate_flow_field_grid},
-    MouseWorldPos,
-};
+use crate::{flow_field::generate_flow_field_grid, MouseWorldPos};
 
 pub struct GridPlugin;
 
@@ -20,8 +19,9 @@ impl Plugin for GridPlugin {
         .add_system(tile_interaction.before(clear_selection))
         .add_system(clear_selection)
         .add_system(gen_flow_field)
-        .add_system(change_alegience)
-        .add_system(change_colour_animation);
+        .add_system(change_alegience.after(tile_interaction))
+        // .add_system(change_colour_animation)
+        .add_system(territory_flip_animation);
     }
 }
 
@@ -165,6 +165,7 @@ impl Grid {
         self.get_xy(coords.x, coords.y)
     }
 
+    #[allow(dead_code)]
     fn get_neighbours(&self, coords: Coords, eight_connected: bool) -> Vec<Option<Entity>> {
         let mut v = Vec::new();
 
@@ -198,6 +199,76 @@ impl Grid {
                 // up left
                 v.push(self.get_xy(x - 1, y + 1));
             }
+        }
+
+        v
+    }
+
+    /// Gets a ring of entities around a point `center`. Ring is hollow. 
+    /// If you want it solid, run it for each distance.
+    /// This will get a diamond shape `distance` tiles away from `center`.</br>
+    /// `distance`: 1 is the 4 cardinal neighbours around the tile.</br>
+    /// `distance`: 2 is the 8 tiles in a diamond adjacent to those 4.
+    #[allow(unused_comparisons)] // reason = "Compare >= 0 before converting to usize")
+    fn get_diamond_ring(&self, center: Coords, distance: usize) -> Vec<Option<Entity>> {
+        let mut v = Vec::new();
+
+        let x = center.x;
+        let y = center.y;
+
+        // dist 0 is self
+        if distance == 0 {
+            v.push(self.get_coords(center));
+            return v;
+        }
+
+        // need to keep negative offsets
+        // for larger rings, maybe the edge is off the grid, but not all values are
+        // so as it iterates, some might come back to non-negative
+
+        // up
+        let mut up_x = x as i32;
+        let mut up_y = (y + distance) as i32;
+        for _ in 0..distance {
+            if x >= 0 && y >= 0 {
+                v.push(self.get_xy(up_x as usize, up_y as usize));
+            }
+            // move down right
+            up_x += 1;
+            up_y -= 1;
+        }
+        // right
+        let mut right_x = (x + distance) as i32;
+        let mut right_y = y as i32;
+        for _ in 0..distance {
+            if x >= 0 && y >= 0 {
+                v.push(self.get_xy(right_x as usize, right_y as usize));
+            }
+            // move down left
+            right_x -= 1;
+            right_y -= 1;
+        }
+        // down
+        let mut down_x = x as i32;
+        let mut down_y = y as i32 - distance as i32;
+        for _ in 0..distance {
+            if x >= 0 && y >= 0 {
+                v.push(self.get_xy(down_x as usize, down_y as usize));
+            }
+            // move up left
+            down_x -= 1;
+            down_y += 1;
+        }
+        // left
+        let mut left_x = x as i32 - distance as i32;
+        let mut left_y = y as i32;
+        for _ in 0..distance {
+            if x >= 0 && y >= 0 {
+                v.push(self.get_xy(left_x as usize, left_y as usize));
+            }
+            // move up right
+            left_x += 1;
+            left_y += 1;
         }
 
         v
@@ -320,7 +391,10 @@ fn tile_interaction(
     mut commands: Commands,
     mut q_interaction: Query<
         (Entity, &Interaction, &mut Sprite, &Tile),
-        (Without<ColourChanger>, Without<Selection>),
+        (
+            Without<TerritoryFlipper>,
+            Without<Selection>,
+        ),
     >,
     tile_colours: Res<TileColours>,
 ) {
@@ -369,12 +443,18 @@ fn gen_flow_field(
 fn change_alegience(
     mut commands: Commands,
     mut q_selection: Query<(Entity, &mut Tile), With<Selection>>,
+    mut q_tiles: Query<&mut Tile, Without<Selection>>,
     keyboard: Res<Input<KeyCode>>,
+    grid: Res<Grid>,
     mut ev_clear: EventWriter<ClearSelectionsEvent>,
 ) {
     // c for colour
     if keyboard.just_pressed(KeyCode::C) {
         ev_clear.send(ClearSelectionsEvent);
+
+        // for (entity, mut tile, _o_sel) in q_tiles.iter_mut()
+        // .filter(|(_ent, _tile, o_sel)| o_sel.is_some()) {
+
         for (entity, mut tile) in q_selection.iter_mut() {
             match tile.tile_type {
                 TileType::Neutral => {
@@ -387,7 +467,34 @@ fn change_alegience(
                     tile.tile_type = TileType::Neutral;
                 }
             }
-            commands.entity(entity).insert(ColourChanger::new(1));
+            // commands.entity(entity).insert(ColourChanger::new(1));
+            commands.entity(entity).insert(TerritoryFlipper::new(0));
+
+            for i in 1..5 {
+                let ring = grid.get_diamond_ring(tile.coords, i);
+                for r in ring.iter() {
+                    if let Some(ent) = r {
+                        if let Ok(mut t) = q_tiles.get_mut(*ent) {
+                            // can double dip if 2 selections overlap
+                            // println!("Why double dip?");
+                            match t.tile_type {
+                                TileType::Neutral => {
+                                    t.tile_type = TileType::Friendly;
+                                }
+                                TileType::Friendly => {
+                                    t.tile_type = TileType::Hostile;
+                                }
+                                TileType::Hostile => {
+                                    t.tile_type = TileType::Neutral;
+                                }
+                            }
+                        }
+                        commands
+                            .entity(*ent)
+                            .insert(TerritoryFlipper::new(10 * i as u32));
+                    }
+                }
+            }
             // {
             //     timer: Timer::from_seconds(0.5, false),
             //     neighbour_count: 0,
@@ -396,115 +503,83 @@ fn change_alegience(
     }
 }
 
+// place a tower
+// then add the colour changer to each thing in range
+// give each ring a different start time
+// then have a system that iterates over each colourchanger
+// changing scale and colour at 50%
+// who sets TileType and when?
+// set at beginning by tower
+// don't update interactions while component attached
+// when finished, remove component
+// what about an enemy being there when it flips?
+// enemy code ignores tiles with the colour changer too
+
 #[derive(Component)]
-struct ColourChanger {
-    // new_colour: Color,
-    timer: Timer,
-    neighbour_count: u16,
+struct TerritoryFlipper {
+    animation_timer: Timer,
+    start_frame: u32,
+    current_frame: u32,
+    colour_changed_already: bool,
 }
 
-impl ColourChanger {
-    fn new(count: u16) -> Self {
-        ColourChanger {
-            timer: Timer::from_seconds(0.5, false),
-            neighbour_count: count,
+impl TerritoryFlipper {
+    fn new(start_frame: u32) -> Self {
+        TerritoryFlipper {
+            animation_timer: Timer::from_seconds(0.5, false),
+            start_frame,
+            current_frame: 0,
+            colour_changed_already: false,
         }
     }
 }
 
-fn change_colour_animation(
+fn territory_flip_animation(
     mut commands: Commands,
-    mut q_interaction: Query<
-        (
-            Entity,
-            &mut Transform,
-            &mut Sprite,
-            &mut Tile,
-            &mut ColourChanger,
-        ),
-        Without<Selection>,
-    >,
-    mut q_without_changer: Query<&mut Tile, Without<ColourChanger>>,
-    grid: Res<Grid>,
+    mut q_territories: Query<(
+        Entity,
+        &mut Transform,
+        &Tile,
+        &mut Sprite,
+        &mut TerritoryFlipper,
+    )>,
     tile_colours: Res<TileColours>,
     time: Res<Time>,
 ) {
-    for (entity, mut trans, mut sprite, mut tile, mut changer) in q_interaction.iter_mut() {
-        if changer.timer.tick(time.delta()).just_finished() {
-            trans.scale = Vec3::ONE;
-            commands.entity(entity).remove::<ColourChanger>();
-        } else {
-            if changer.timer.percent() < 0.5 {
-                // old colour
-                trans.scale = Vec3::lerp(
-                    Vec3::ONE,
-                    Vec3::new(1.0, 0.0, 1.0),
-                    // convert 0.0-0.5 to 0.0-1.0
-                    changer.timer.percent() * 2.0,
-                );
+    for (entity, mut trans, tile, mut sprite, mut flipper) in q_territories.iter_mut() {
+        if flipper.current_frame == flipper.start_frame {
+            let percent = flipper.animation_timer.tick(time.delta()).percent();
 
-                let in_range = changer.timer.percent() > 0.3 && changer.timer.percent() < 0.35;
-                if changer.neighbour_count > 0 && in_range {
-                    // propage to neighbours
-                    // tile.coords
-                    let neighbours = grid.get_neighbours(tile.coords, false);
-
-                    for n in neighbours.iter() {
-                        if let Some(ent) = n {
-                            // only give it a colour changer if it doesn't already have one
-                            // doesn't quite work when 2 of these neighbours
-                            // share the same neighbour
-                            // they both add ColourChanger to it this frame (resetting it)
-                            // but they increment the tile_type twice
-                            // I guess it works if I set the tile type instead of cycling it.
-                            // problem is in the q_interaction loop. Those can collide
-                            // not this loop
-                            // this is fairly sloppy anyway and needs to be redone.
-                            // should be set(type)
-                            // if !type, do flipping and pass it on
-                            // otherwise, you'd still need to pass it on 
-                            // in case the tiles past you aren't the right type
-                            // I wonder if it is easier to just grab all the tiles at the start
-                            // and then offset the times somehow?
-                            // each one gets a different frame where it starts,
-                            // then they all start at once.
-                            if let Ok(mut n_tile) = q_without_changer.get_mut(*ent) {
-                            // if q_without_changer.contains(*ent) {
-                                // println!(
-                                //     "Changing the colour of index {:?} from {:?}",
-                                //     *n, n_tile.coords
-                                // );
-                                
-
-                                match n_tile.tile_type {
-                                    TileType::Neutral => {
-                                        n_tile.tile_type = TileType::Friendly;
-                                    }
-                                    TileType::Friendly => {
-                                        n_tile.tile_type = TileType::Hostile;
-                                    }
-                                    TileType::Hostile => {
-                                        n_tile.tile_type = TileType::Neutral;
-                                    }
-                                }
-
-                                commands
-                                    .entity(*ent)
-                                    .insert(ColourChanger::new(changer.neighbour_count - 1));
-                            }
-                        }
-                    }
-                }
+            if percent < 0.5 {
+                // shouldn't be linear
+                // spinning tile in 2D should be
+                // sin()
+                // from PI/2 to PI
+                // that's 1.0 to 0.0 in the shape I want I think
+                // start at 1.0, then slowly go to 0.0
+                // so the lerp is backwards
+                let p = FRAC_PI_2 + FRAC_PI_2 * percent * 2.0;
+                trans.scale = Vec3::lerp(Vec3::new(1.0, 0.0, 1.0), Vec3::ONE, f32::sin(p));
             } else {
-                tile.update_colour(&mut sprite, &tile_colours);
+                // only run once
+                if !flipper.colour_changed_already {
+                    flipper.colour_changed_already = true;
+                    tile.update_colour(&mut sprite, &tile_colours);
+                }
 
-                trans.scale = Vec3::lerp(
-                    Vec3::new(1.0, 0.0, 1.0),
-                    Vec3::ONE,
-                    // convert 0.5-1.0 to 0.0-1.0
-                    (changer.timer.percent() - 0.5) * 2.0,
-                );
+                // want from 0 to pi/2
+                // have 0.5-1.0
+                // convert 0.5-1.0 to 0.0-1.0
+                // (percent - 0.5) * 2.0
+                let p = (percent - 0.5) * 2.0 * FRAC_PI_2;
+                trans.scale = Vec3::lerp(Vec3::new(1.0, 0.0, 1.0), Vec3::ONE, f32::sin(p));
             }
+
+            if flipper.animation_timer.just_finished() {
+                commands.entity(entity).remove::<TerritoryFlipper>();
+            }
+        } else {
+            flipper.current_frame += 1;
         }
     }
 }

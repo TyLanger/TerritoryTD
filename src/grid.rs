@@ -13,13 +13,15 @@ impl Plugin for GridPlugin {
         })
         .insert_resource(TileColours::new())
         .add_event::<ClearSelectionsEvent>()
+        .add_event::<ChangeAllegianceEvent>()
         .add_startup_system(setup_grid)
         .add_system(clear_interaction.before(check_interaction))
         .add_system(check_interaction.before(tile_interaction))
         .add_system(tile_interaction.before(clear_selection))
         .add_system(clear_selection)
         .add_system(gen_flow_field)
-        .add_system(change_alegience.after(tile_interaction))
+        // .add_system(change_alegience.after(tile_interaction))
+        .add_system(change_allegiance.after(tile_interaction))
         // .add_system(change_colour_animation)
         .add_system(territory_flip_animation);
     }
@@ -30,7 +32,7 @@ pub const GRID_HEIGHT: usize = 20;
 pub const TILE_SIZE: f32 = 32.0;
 
 // events
-struct ClearSelectionsEvent;
+pub struct ClearSelectionsEvent;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Coords {
@@ -79,7 +81,7 @@ impl Tile {
         }
     }
 
-    fn is_even(&self) -> bool {
+    pub fn is_even(&self) -> bool {
         (self.coords.x + self.coords.y) % 2 == 0
     }
 
@@ -204,7 +206,7 @@ impl Grid {
         v
     }
 
-    /// Gets a ring of entities around a point `center`. Ring is hollow. 
+    /// Gets a ring of entities around a point `center`. Ring is hollow.
     /// If you want it solid, run it for each distance.
     /// This will get a diamond shape `distance` tiles away from `center`.</br>
     /// `distance`: 1 is the 4 cardinal neighbours around the tile.</br>
@@ -391,10 +393,7 @@ fn tile_interaction(
     mut commands: Commands,
     mut q_interaction: Query<
         (Entity, &Interaction, &mut Sprite, &Tile),
-        (
-            Without<TerritoryFlipper>,
-            Without<Selection>,
-        ),
+        (Without<TerritoryFlipper>, Without<Selection>),
     >,
     tile_colours: Res<TileColours>,
 ) {
@@ -440,65 +439,36 @@ fn gen_flow_field(
     }
 }
 
-fn change_alegience(
+pub struct ChangeAllegianceEvent {
+    pub center_coords: Coords,
+    pub range: u32,
+}
+
+fn change_allegiance(
     mut commands: Commands,
-    mut q_selection: Query<(Entity, &mut Tile), With<Selection>>,
-    mut q_tiles: Query<&mut Tile, Without<Selection>>,
-    keyboard: Res<Input<KeyCode>>,
+    mut ev_change: EventReader<ChangeAllegianceEvent>,
+    mut q_tiles: Query<&mut Tile>,
     grid: Res<Grid>,
-    mut ev_clear: EventWriter<ClearSelectionsEvent>,
 ) {
-    // c for colour
-    if keyboard.just_pressed(KeyCode::C) {
-        ev_clear.send(ClearSelectionsEvent);
-
-        // for (entity, mut tile, _o_sel) in q_tiles.iter_mut()
-        // .filter(|(_ent, _tile, o_sel)| o_sel.is_some()) {
-
-        for (entity, mut tile) in q_selection.iter_mut() {
-            match tile.tile_type {
-                TileType::Neutral => {
-                    tile.tile_type = TileType::Friendly;
-                }
-                TileType::Friendly => {
-                    tile.tile_type = TileType::Hostile;
-                }
-                TileType::Hostile => {
-                    tile.tile_type = TileType::Neutral;
-                }
-            }
-            // commands.entity(entity).insert(ColourChanger::new(1));
-            commands.entity(entity).insert(TerritoryFlipper::new(0));
-
-            for i in 1..5 {
-                let ring = grid.get_diamond_ring(tile.coords, i);
-                for r in ring.iter() {
-                    if let Some(ent) = r {
-                        if let Ok(mut t) = q_tiles.get_mut(*ent) {
-                            // can double dip if 2 selections overlap
-                            // println!("Why double dip?");
-                            match t.tile_type {
-                                TileType::Neutral => {
-                                    t.tile_type = TileType::Friendly;
-                                }
-                                TileType::Friendly => {
-                                    t.tile_type = TileType::Hostile;
-                                }
-                                TileType::Hostile => {
-                                    t.tile_type = TileType::Neutral;
-                                }
-                            }
+    for ev in ev_change.iter() {
+        for i in 0..ev.range {
+            let neighbours = grid.get_diamond_ring(ev.center_coords, i as usize);
+            for n in neighbours.iter().flatten() {
+                if let Ok(mut tile) = q_tiles.get_mut(*n) {
+                    match tile.tile_type {
+                        TileType::Neutral => {
+                            tile.tile_type = TileType::Friendly;
                         }
-                        commands
-                            .entity(*ent)
-                            .insert(TerritoryFlipper::new(10 * i as u32));
+                        TileType::Friendly => {
+                            tile.tile_type = TileType::Hostile;
+                        }
+                        TileType::Hostile => {
+                            tile.tile_type = TileType::Neutral;
+                        }
                     }
+                    commands.entity(*n).insert(TerritoryFlipper::new(10 * i));
                 }
             }
-            // {
-            //     timer: Timer::from_seconds(0.5, false),
-            //     neighbour_count: 0,
-            // });
         }
     }
 }

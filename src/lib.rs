@@ -4,6 +4,7 @@ mod enemy;
 mod flow_field;
 mod grid;
 mod gun;
+mod tower;
 mod wall;
 
 pub struct GamePlugin;
@@ -16,6 +17,7 @@ impl Plugin for GamePlugin {
             .add_plugin(enemy::EnemyPlugin)
             .add_plugin(wall::WallPlugin)
             .add_plugin(gun::GunPlugin)
+            .add_plugin(tower::TowerPlugin)
             .add_system(update_mouse_position);
     }
 }

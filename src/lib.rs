@@ -4,6 +4,7 @@ mod enemy;
 mod flow_field;
 mod grid;
 mod gun;
+mod loading;
 mod tower;
 mod wall;
 
@@ -11,7 +12,9 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(MouseWorldPos(Vec2::ONE * 10000.0))
+        app.add_state(GameState::Loading)
+            .insert_resource(MouseWorldPos(Vec2::ONE * 10000.0))
+            .add_plugin(loading::LoadingPlugin)
             .add_plugin(flow_field::FlowFieldPlugin)
             .add_plugin(grid::GridPlugin)
             .add_plugin(enemy::EnemyPlugin)
@@ -20,6 +23,15 @@ impl Plugin for GamePlugin {
             .add_plugin(tower::TowerPlugin)
             .add_system(update_mouse_position);
     }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+enum GameState {
+    Loading,
+    MainMenu,
+    // Tutorial,
+    Playing,
+    End,
 }
 
 pub struct MouseWorldPos(Vec2);

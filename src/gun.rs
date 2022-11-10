@@ -33,7 +33,10 @@ pub struct BurstInfo {
 impl BurstInfo {
     pub fn from(time_between_shots: f32, shots_in_burst: u32) -> Self {
         assert!(shots_in_burst > 0, "shots_in_burst can't be 0");
-        BurstInfo { base_timer: time_between_shots, max_shots: shots_in_burst }
+        BurstInfo {
+            base_timer: time_between_shots,
+            max_shots: shots_in_burst,
+        }
     }
 }
 
@@ -49,12 +52,12 @@ struct BurstInfoStorage {
 
 impl BurstInfoStorage {
     fn new(info: BurstInfo, pos: Vec3, dir: Vec2) -> Self {
-        BurstInfoStorage { 
+        BurstInfoStorage {
             timer: info.base_timer,
-            base_timer: info.base_timer, 
-            shots_left: info.max_shots - 1, 
-            pos, 
-            dir 
+            base_timer: info.base_timer,
+            shots_left: info.max_shots - 1,
+            pos,
+            dir,
         }
     }
 }
@@ -100,7 +103,6 @@ impl Gun {
             GunState::Firing(mut b) => {
                 b.timer -= delta.as_secs_f32();
                 if b.timer < 0.0 {
-                    
                     self.bullet.spawn(commands, b.pos, b.dir);
                     // b.shots is number in the burst
                     // self.current_shots is the number in your clip
@@ -115,14 +117,13 @@ impl Gun {
                     if b.shots_left > 0 {
                         b.timer = b.base_timer;
                     } else {
-                        // once you've shot all 3 in the burst, 
+                        // once you've shot all 3 in the burst,
                         // do the normal gun ShotCooldown
                         self.state = GunState::ShotCooldown;
                         return;
                     }
                 }
                 self.state = GunState::Firing(b);
-
             }
             _ => {}
         }
@@ -130,8 +131,6 @@ impl Gun {
 
     pub fn shoot(&mut self, commands: &mut Commands, pos: Vec3, dir: Vec2) {
         if self.state == GunState::Ready {
-
-            
             // spawn a bullet somehow
             // what do you need to spawn a bullet?
             // mut commands: Commands,
@@ -141,12 +140,14 @@ impl Gun {
                     self.bullet.spawn(commands, pos, dir);
                 }
                 GunType::Shotgun => {
-                    self.bullet.spawn(commands, pos + Vec3::new(0.0, 10.0, 0.0), dir);
-                    self.bullet.spawn(commands, pos + Vec3::new(0.0, -10.0, 0.0), dir);
+                    self.bullet
+                        .spawn(commands, pos + Vec3::new(0.0, 10.0, 0.0), dir);
+                    self.bullet
+                        .spawn(commands, pos + Vec3::new(0.0, -10.0, 0.0), dir);
                 }
                 GunType::Burst(b) => {
                     self.bullet.spawn(commands, pos, dir);
-                    let storage = BurstInfoStorage::new(b, pos, dir);  
+                    let storage = BurstInfoStorage::new(b, pos, dir);
                     self.state = GunState::Firing(storage);
                     // println!("Start burst");
                     // return to not go into shotCooldown
@@ -162,8 +163,6 @@ impl Gun {
             } else {
                 self.state = GunState::ShotCooldown;
             }
-
-            
         }
     }
 
@@ -244,26 +243,18 @@ fn tick_bullets(
     }
 }
 
-fn tick_guns(
-    mut commands: Commands,
-    mut q_guns: Query<&mut Gun>, 
-    time: Res<Time>
-) {
+fn tick_guns(mut commands: Commands, mut q_guns: Query<&mut Gun>, time: Res<Time>) {
     for mut gun in q_guns.iter_mut() {
         gun.tick(time.delta(), &mut commands);
     }
 }
 
-pub struct ShootEvent{
+pub struct ShootEvent {
     pos: Vec3,
     dir: Vec2,
 }
 
-fn shoot_system(
-    mut ev_shoot: EventReader<ShootEvent>,
-) {
-
-}
+fn shoot_system(mut ev_shoot: EventReader<ShootEvent>) {}
 
 // send a shoot event
 // it will set the parameters on the gun

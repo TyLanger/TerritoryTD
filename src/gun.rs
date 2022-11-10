@@ -1,6 +1,9 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
+
+use crate::enemy::Enemy;
 
 pub struct GunPlugin;
 
@@ -221,7 +224,10 @@ impl Bullet {
 
         commands
             .entity(ent)
-            .insert(Bullet::new(dir).update_entity(ent));
+            .insert(Bullet::new(dir).update_entity(ent))
+            .insert(RigidBody::Dynamic)
+            .insert(Collider::ball(8.0))
+            .insert(Sensor);
     }
 
     fn despawn(&self, commands: &mut Commands) {
@@ -231,12 +237,32 @@ impl Bullet {
 
 fn tick_bullets(
     mut commands: Commands,
-    mut q_bullets: Query<(&mut Transform, &mut Bullet)>,
+    mut q_bullets: Query<(Entity, &mut Transform, &mut Bullet)>,
+    rapier_context: Res<RapierContext>,
+    mut q_enemies: Query<(Entity, &mut Enemy)>,
     time: Res<Time>,
 ) {
-    for (mut trans, mut bullet) in q_bullets.iter_mut() {
+    for (bullet_ent, mut trans, mut bullet) in q_bullets.iter_mut() {
         trans.translation += bullet.dir.extend(0.0) * bullet.speed * time.delta_seconds();
-        if bullet.lifetime.tick(time.delta()).just_finished() {
+
+        // does it hit anything?
+        let collisions = rapier_context.intersections_with(bullet_ent);
+        let mut hit_something = false;
+        for (a, b, hit) in collisions {
+            if hit {
+                let enemy_ent = if a == bullet_ent { b } else { a };
+
+                if let Ok((e_ent, mut enemy)) = q_enemies.get_mut(enemy_ent) {
+                    // enemy.take_damage();
+                    // println!("Killed something");
+                    commands.entity(e_ent).despawn_recursive();
+                    hit_something = true;
+                }
+            }
+        }
+
+        // might need to split these up later
+        if hit_something || bullet.lifetime.tick(time.delta()).just_finished() {
             //die
             bullet.despawn(&mut commands);
         }

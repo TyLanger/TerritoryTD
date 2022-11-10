@@ -15,7 +15,7 @@ impl Plugin for TowerPlugin {
             SystemSet::on_exit(GameState::Loading).with_system(create_tower_store_ui),
         );
         app.add_event::<BuildButtonEvent>()
-            .add_system(build_tower_system)
+            .add_system(build_tower_system.before(crate::grid::clear_selection))
             .add_system(tower_shoot)
             .add_system(update_button_colours);
     }

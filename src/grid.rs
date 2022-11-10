@@ -414,7 +414,7 @@ fn tile_interaction(
     }
 }
 
-fn clear_selection(
+pub fn clear_selection(
     mut commands: Commands,
     q_selection: Query<Entity, With<Selection>>,
     ev_clear: EventReader<ClearSelectionsEvent>,

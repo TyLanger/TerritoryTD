@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
 
 use crate::grid::{self, Grid, Tile, GRID_HEIGHT, GRID_WIDTH, TILE_SIZE};
 
@@ -11,7 +12,7 @@ impl Plugin for EnemyPlugin {
 }
 
 #[derive(Component)]
-struct Enemy {
+pub struct Enemy {
     dir: Vec2,
     pos: Option<Vec2>,
     speed: f32,
@@ -47,7 +48,10 @@ fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {
                         transform: Transform::from_translation(offset + pos),
                         ..default()
                     })
-                    .insert(Enemy::new());
+                    .insert(Enemy::new())
+                    .insert(Collider::cuboid(12.0, 12.0))
+                    .insert(Sensor)
+                    .insert(RigidBody::Dynamic);
             }
         }
     }

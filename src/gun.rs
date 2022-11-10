@@ -51,16 +51,18 @@ struct BurstInfoStorage {
     shots_left: u32,
     pos: Vec3,
     dir: Vec2,
+    parent_entity: Entity,
 }
 
 impl BurstInfoStorage {
-    fn new(info: BurstInfo, pos: Vec3, dir: Vec2) -> Self {
+    fn new(info: BurstInfo, pos: Vec3, dir: Vec2, parent_entity: Entity) -> Self {
         BurstInfoStorage {
             timer: info.base_timer,
             base_timer: info.base_timer,
             shots_left: info.max_shots - 1,
             pos,
             dir,
+            parent_entity,
         }
     }
 }
@@ -106,7 +108,7 @@ impl Gun {
             GunState::Firing(mut b) => {
                 b.timer -= delta.as_secs_f32();
                 if b.timer < 0.0 {
-                    self.bullet.spawn(commands, b.pos, b.dir);
+                    self.bullet.spawn(commands, b.pos, b.dir, b.parent_entity);
                     // b.shots is number in the burst
                     // self.current_shots is the number in your clip
                     b.shots_left -= 1;
@@ -132,7 +134,7 @@ impl Gun {
         }
     }
 
-    pub fn shoot(&mut self, commands: &mut Commands, pos: Vec3, dir: Vec2) {
+    pub fn shoot(&mut self, commands: &mut Commands, pos: Vec3, dir: Vec2, parent_entity: Entity) {
         if self.state == GunState::Ready {
             // spawn a bullet somehow
             // what do you need to spawn a bullet?
@@ -140,17 +142,25 @@ impl Gun {
             // position, direction, etc.
             match self.gun_type {
                 GunType::Pistol => {
-                    self.bullet.spawn(commands, pos, dir);
+                    self.bullet.spawn(commands, pos, dir, parent_entity);
                 }
                 GunType::Shotgun => {
-                    self.bullet
-                        .spawn(commands, pos + Vec3::new(0.0, 10.0, 0.0), dir);
-                    self.bullet
-                        .spawn(commands, pos + Vec3::new(0.0, -10.0, 0.0), dir);
+                    self.bullet.spawn(
+                        commands,
+                        pos + Vec3::new(0.0, 10.0, 0.0),
+                        dir,
+                        parent_entity,
+                    );
+                    self.bullet.spawn(
+                        commands,
+                        pos + Vec3::new(0.0, -10.0, 0.0),
+                        dir,
+                        parent_entity,
+                    );
                 }
                 GunType::Burst(b) => {
-                    self.bullet.spawn(commands, pos, dir);
-                    let storage = BurstInfoStorage::new(b, pos, dir);
+                    self.bullet.spawn(commands, pos, dir, parent_entity);
+                    let storage = BurstInfoStorage::new(b, pos, dir, parent_entity);
                     self.state = GunState::Firing(storage);
                     // println!("Start burst");
                     // return to not go into shotCooldown
@@ -188,7 +198,8 @@ struct Bullet {
     dir: Vec2,
     speed: f32,
     lifetime: Timer,
-    entity: Option<Entity>,
+    self_entity: Option<Entity>,
+    parent_entity: Option<Entity>,
 }
 
 impl Bullet {
@@ -197,16 +208,22 @@ impl Bullet {
             dir,
             speed: 100.0,
             lifetime: Timer::from_seconds(2.0, false),
-            entity: None,
+            self_entity: None,
+            parent_entity: None,
         }
     }
 
     fn update_entity(mut self, entity: Entity) -> Self {
-        self.entity = Some(entity);
+        self.self_entity = Some(entity);
         self
     }
 
-    fn spawn(&self, commands: &mut Commands, pos: Vec3, dir: Vec2) {
+    fn update_parent(mut self, parent: Entity) -> Self {
+        self.parent_entity = Some(parent);
+        self
+    }
+
+    fn spawn(&self, commands: &mut Commands, pos: Vec3, dir: Vec2, parent: Entity) {
         let ent = commands
             .spawn_bundle(SpriteBundle {
                 sprite: Sprite {
@@ -224,14 +241,16 @@ impl Bullet {
 
         commands
             .entity(ent)
-            .insert(Bullet::new(dir).update_entity(ent))
+            .insert(Bullet::new(dir).update_entity(ent).update_parent(parent))
             .insert(RigidBody::Dynamic)
             .insert(Collider::ball(8.0))
             .insert(Sensor);
     }
 
     fn despawn(&self, commands: &mut Commands) {
-        commands.entity(self.entity.unwrap()).despawn_recursive();
+        commands
+            .entity(self.self_entity.unwrap())
+            .despawn_recursive();
     }
 }
 
@@ -255,6 +274,11 @@ fn tick_bullets(
                 if let Ok((e_ent, mut enemy)) = q_enemies.get_mut(enemy_ent) {
                     // enemy.take_damage();
                     // println!("Killed something");
+                    println!(
+                        "Killed something. Bullet: {:?}, Parent: {:?}",
+                        bullet_ent,
+                        bullet.parent_entity.unwrap()
+                    );
                     commands.entity(e_ent).despawn_recursive();
                     hit_something = true;
                 }

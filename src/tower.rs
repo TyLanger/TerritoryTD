@@ -138,12 +138,17 @@ fn build_tower_system(
 
 fn tower_shoot(
     mut commands: Commands,
-    mut q_towers: Query<(&Transform, &TowerComponent, &mut Gun)>,
+    mut q_towers: Query<(Entity, &Transform, &TowerComponent, &mut Gun)>,
     mouse: Res<MouseWorldPos>,
 ) {
-    for (trans, _tower, mut gun) in q_towers.iter_mut() {
+    for (entity, trans, _tower, mut gun) in q_towers.iter_mut() {
         let dir = mouse.0 - trans.translation.truncate();
-        gun.shoot(&mut commands, trans.translation, dir.normalize_or_zero());
+        gun.shoot(
+            &mut commands,
+            trans.translation,
+            dir.normalize_or_zero(),
+            entity,
+        );
     }
 }
 

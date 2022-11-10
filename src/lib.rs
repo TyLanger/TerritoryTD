@@ -4,6 +4,7 @@ mod enemy;
 mod flow_field;
 mod grid;
 mod gun;
+mod health;
 mod loading;
 mod tower;
 mod wall;

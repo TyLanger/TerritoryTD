@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-use crate::grid::{self, Grid, Tile, GRID_HEIGHT, GRID_WIDTH, TILE_SIZE};
+use crate::{
+    grid::{self, Grid, Tile, GRID_HEIGHT, GRID_WIDTH, TILE_SIZE},
+    health::Health,
+};
 
 pub struct EnemyPlugin;
 
@@ -49,6 +52,7 @@ fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {
                         ..default()
                     })
                     .insert(Enemy::new())
+                    .insert(Health::new(5))
                     .insert(Collider::cuboid(12.0, 12.0))
                     .insert(Sensor)
                     .insert(RigidBody::Dynamic);

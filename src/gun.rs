@@ -3,13 +3,16 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-use crate::enemy::Enemy;
+use crate::{enemy::Enemy, health::Health};
 
 pub struct GunPlugin;
 
 impl Plugin for GunPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(tick_bullets).add_system(tick_guns);
+        app.add_event::<KillEvent>()
+            .add_system(tick_bullets)
+            .add_system(tick_guns)
+            .add_system(update_killcount);
     }
 }
 
@@ -19,6 +22,10 @@ impl Plugin for GunPlugin {
 // clip size
 // reload time
 // number of bullet shot
+
+struct KillEvent {
+    tower: Entity,
+}
 
 pub enum GunType {
     Pistol,
@@ -77,12 +84,13 @@ pub struct Gun {
     num_bullets_shot: u32,
     state: GunState,
     gun_type: GunType,
+    kill_count: u32,
 }
 
 impl Gun {
     pub fn new(gun_type: GunType) -> Self {
         Gun {
-            bullet: Bullet::new(Vec2::ZERO),
+            bullet: Bullet::new(Vec2::ZERO, 1),
             timer_between_shots: Timer::from_seconds(0.3, true),
             current_shots: 6,
             clip_size: 6,
@@ -90,6 +98,7 @@ impl Gun {
             num_bullets_shot: 1,
             state: GunState::Ready,
             gun_type,
+            kill_count: 0,
         }
     }
 
@@ -197,16 +206,18 @@ enum GunState {
 struct Bullet {
     dir: Vec2,
     speed: f32,
+    damage: u32,
     lifetime: Timer,
     self_entity: Option<Entity>,
     parent_entity: Option<Entity>,
 }
 
 impl Bullet {
-    fn new(dir: Vec2) -> Self {
+    fn new(dir: Vec2, damage: u32) -> Self {
         Bullet {
             dir,
             speed: 100.0,
+            damage,
             lifetime: Timer::from_seconds(2.0, false),
             self_entity: None,
             parent_entity: None,
@@ -241,7 +252,14 @@ impl Bullet {
 
         commands
             .entity(ent)
-            .insert(Bullet::new(dir).update_entity(ent).update_parent(parent))
+            // should it look more like this?
+            // need to change dir too
+            // .insert(self.clone().update_entity(ent).update_parent(parent))
+            .insert(
+                Bullet::new(dir, self.damage)
+                    .update_entity(ent)
+                    .update_parent(parent),
+            )
             .insert(RigidBody::Dynamic)
             .insert(Collider::ball(8.0))
             .insert(Sensor);
@@ -258,7 +276,8 @@ fn tick_bullets(
     mut commands: Commands,
     mut q_bullets: Query<(Entity, &mut Transform, &mut Bullet)>,
     rapier_context: Res<RapierContext>,
-    mut q_enemies: Query<(Entity, &mut Enemy)>,
+    mut q_enemies: Query<(Entity, &mut Enemy, &mut Health)>,
+    mut ev_kill: EventWriter<KillEvent>,
     time: Res<Time>,
 ) {
     for (bullet_ent, mut trans, mut bullet) in q_bullets.iter_mut() {
@@ -271,15 +290,22 @@ fn tick_bullets(
             if hit {
                 let enemy_ent = if a == bullet_ent { b } else { a };
 
-                if let Ok((e_ent, mut enemy)) = q_enemies.get_mut(enemy_ent) {
+                if let Ok((e_ent, mut enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
                     // enemy.take_damage();
                     // println!("Killed something");
-                    println!(
-                        "Killed something. Bullet: {:?}, Parent: {:?}",
-                        bullet_ent,
-                        bullet.parent_entity.unwrap()
-                    );
-                    commands.entity(e_ent).despawn_recursive();
+                    // println!(
+                    //     "Killed something. Bullet: {:?}, Parent: {:?}",
+                    //     bullet_ent,
+                    //     bullet.parent_entity.unwrap()
+                    // );
+                    health.take_damage(bullet.damage);
+                    if health.just_died() {
+                        ev_kill.send(KillEvent {
+                            tower: bullet.parent_entity.unwrap(),
+                        });
+                        commands.entity(e_ent).despawn_recursive();
+                    }
+
                     hit_something = true;
                 }
             }
@@ -296,6 +322,19 @@ fn tick_bullets(
 fn tick_guns(mut commands: Commands, mut q_guns: Query<&mut Gun>, time: Res<Time>) {
     for mut gun in q_guns.iter_mut() {
         gun.tick(time.delta(), &mut commands);
+    }
+}
+
+fn update_killcount(mut ev_kill: EventReader<KillEvent>, mut q_towers: Query<&mut Gun>) {
+    for ev in ev_kill.iter() {
+        if let Ok(mut gun) = q_towers.get_mut(ev.tower) {
+            gun.kill_count += 1;
+            // println!("Updated killcount: {:?}", gun.kill_count);
+            if gun.kill_count % 5 == 0 {
+                gun.bullet.damage += 1;
+                println!("Five kills. Damage up {:?}", gun.bullet.damage);
+            }
+        }
     }
 }
 

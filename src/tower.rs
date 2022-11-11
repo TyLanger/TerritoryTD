@@ -17,66 +17,66 @@ impl Plugin for TowerPlugin {
         app.add_event::<BuildButtonEvent>()
             .add_system(build_tower_system.before(crate::grid::clear_selection))
             .add_system(tower_shoot)
-            .add_system(update_button_colours);
+            .add_system(tower_build_buttons_interactions);
     }
 }
 
-trait Tower: Component + Copy {
-    fn build(&self, commands: &mut Commands, tile_ent: Entity)
-    where
-        Self: Sized,
-    {
-        commands.entity(tile_ent).with_children(|commands| {
-            commands
-                .spawn_bundle(SpriteBundle {
-                    sprite: Sprite {
-                        color: self.get_color(),
-                        custom_size: Some(Vec2::splat(20.0)),
-                        ..default()
-                    },
-                    transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.1)),
-                    ..default()
-                })
-                .insert(*self);
-        });
-    }
+// trait Tower: Component + Copy {
+//     fn build(&self, commands: &mut Commands, tile_ent: Entity)
+//     where
+//         Self: Sized,
+//     {
+//         commands.entity(tile_ent).with_children(|commands| {
+//             commands
+//                 .spawn_bundle(SpriteBundle {
+//                     sprite: Sprite {
+//                         color: self.get_color(),
+//                         custom_size: Some(Vec2::splat(20.0)),
+//                         ..default()
+//                     },
+//                     transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.1)),
+//                     ..default()
+//                 })
+//                 .insert(*self);
+//         });
+//     }
 
-    fn get_color(&self) -> Color;
+//     fn get_color(&self) -> Color;
 
-    fn shoot(&self) {
-        println!("Shoot!");
-    }
-}
+//     fn shoot(&self) {
+//         println!("Shoot!");
+//     }
+// }
 
-#[derive(Component, Copy, Clone)]
-struct ArrowTower {
-    color: Color,
-}
+// #[derive(Component, Copy, Clone)]
+// struct ArrowTower {
+//     color: Color,
+// }
 
-impl ArrowTower {
-    fn new() -> Self {
-        ArrowTower {
-            color: Color::GREEN,
-        }
-    }
-}
+// impl ArrowTower {
+//     fn new() -> Self {
+//         ArrowTower {
+//             color: Color::GREEN,
+//         }
+//     }
+// }
 
-impl Tower for ArrowTower {
-    fn get_color(&self) -> Color {
-        self.color
-    }
-}
+// impl Tower for ArrowTower {
+//     fn get_color(&self) -> Color {
+//         self.color
+//     }
+// }
 
-#[derive(Component, Copy, Clone)]
-struct BombTower {
-    color: Color,
-}
+// #[derive(Component, Copy, Clone)]
+// struct BombTower {
+//     color: Color,
+// }
 
-impl Tower for BombTower {
-    fn get_color(&self) -> Color {
-        self.color
-    }
-}
+// impl Tower for BombTower {
+//     fn get_color(&self) -> Color {
+//         self.color
+//     }
+// }
 
 fn build_tower_system(
     mut commands: Commands,
@@ -263,7 +263,7 @@ const NORMAL_BUTTON: Color = Color::rgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::rgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::rgb(0.35, 0.75, 0.35);
 
-fn update_button_colours(
+fn tower_build_buttons_interactions(
     mut q_interaction: Query<
         (&Interaction, &mut UiColor, &TowerBuildButton),
         (Changed<Interaction>, With<Button>, With<TowerBuildButton>),

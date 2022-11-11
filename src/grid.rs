@@ -46,6 +46,14 @@ impl Coords {
         let y =
             (((GRID_HEIGHT - 1) as f32 * 0.5 * TILE_SIZE) + TILE_SIZE * 0.5 + pos.y) / TILE_SIZE;
 
+        // if x < 0.0 || y < 0.0 {
+        //     println!("x or y < 0 x,y:{:?}, {:?}", x, y);
+        //     println!("converted to usize: {:?}, {:?}", x as usize, y as usize);
+        // }
+        // should I clamp?
+        // lower bounds are auto clamped by converting to usize
+
+        // negative values get clamped to 0
         Coords {
             x: x as usize,
             y: y as usize,
@@ -434,7 +442,14 @@ fn gen_flow_field(
     q_tiles: Query<&mut Tile>,
 ) {
     if keyboard.just_pressed(KeyCode::F) {
-        let dest = Coords::from_vec2(mouse.0);
+        let mut dest = Coords::from_vec2(mouse.0);
+
+        // clamp in range
+        dest.x = dest.x.clamp(0, GRID_WIDTH - 1);
+        dest.y = dest.y.clamp(0, GRID_HEIGHT - 1);
+        // dest.x = dest.x.min(GRID_WIDTH-1);
+        // dest.y = dest.y.min(GRID_HEIGHT-1);
+
         generate_flow_field_grid(dest, grid, q_tiles);
     }
 }

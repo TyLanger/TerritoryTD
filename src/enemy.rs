@@ -29,6 +29,11 @@ impl Enemy {
             speed: 25.0,
         }
     }
+
+    pub fn die(&self, commands: &mut Commands, self_entity: Entity) {
+        // should just have a system that checks for death instead
+        commands.entity(self_entity).despawn_recursive();
+    }
 }
 
 fn spawn_enemy(mut commands: Commands, keyboard: Res<Input<KeyCode>>) {

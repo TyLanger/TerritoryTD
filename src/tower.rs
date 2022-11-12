@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     grid::{ChangeAllegianceEvent, ClearSelectionsEvent, Selection, Tile},
-    gun::{BurstInfo, Gun, GunType},
+    gun::{BurstInfo, EndBehaviour, ExplosionInfo, Gun, GunType},
     loading::FontAssets,
     GameState, MouseWorldPos,
 };
@@ -15,68 +15,11 @@ impl Plugin for TowerPlugin {
             SystemSet::on_exit(GameState::Loading).with_system(create_tower_store_ui),
         );
         app.add_event::<BuildButtonEvent>()
+            .add_system(tower_build_buttons_interactions.before(build_tower_system))
             .add_system(build_tower_system.before(crate::grid::clear_selection))
-            .add_system(tower_shoot)
-            .add_system(tower_build_buttons_interactions);
+            .add_system(tower_shoot);
     }
 }
-
-// trait Tower: Component + Copy {
-//     fn build(&self, commands: &mut Commands, tile_ent: Entity)
-//     where
-//         Self: Sized,
-//     {
-//         commands.entity(tile_ent).with_children(|commands| {
-//             commands
-//                 .spawn_bundle(SpriteBundle {
-//                     sprite: Sprite {
-//                         color: self.get_color(),
-//                         custom_size: Some(Vec2::splat(20.0)),
-//                         ..default()
-//                     },
-//                     transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.1)),
-//                     ..default()
-//                 })
-//                 .insert(*self);
-//         });
-//     }
-
-//     fn get_color(&self) -> Color;
-
-//     fn shoot(&self) {
-//         println!("Shoot!");
-//     }
-// }
-
-// #[derive(Component, Copy, Clone)]
-// struct ArrowTower {
-//     color: Color,
-// }
-
-// impl ArrowTower {
-//     fn new() -> Self {
-//         ArrowTower {
-//             color: Color::GREEN,
-//         }
-//     }
-// }
-
-// impl Tower for ArrowTower {
-//     fn get_color(&self) -> Color {
-//         self.color
-//     }
-// }
-
-// #[derive(Component, Copy, Clone)]
-// struct BombTower {
-//     color: Color,
-// }
-
-// impl Tower for BombTower {
-//     fn get_color(&self) -> Color {
-//         self.color
-//     }
-// }
 
 fn build_tower_system(
     mut commands: Commands,
@@ -99,19 +42,25 @@ fn build_tower_system(
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(GunType::Pistol));
+                        .insert(Gun::new(GunType::Pistol, EndBehaviour::None));
                 }
                 TowerType::Shotgun => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(GunType::Shotgun));
+                        .insert(Gun::new(
+                            GunType::Shotgun,
+                            EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
+                        ));
                 }
                 TowerType::Burst => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(GunType::Burst(BurstInfo::from(0.1, 3))));
+                        .insert(Gun::new(
+                            GunType::Burst(BurstInfo::from(0.1, 3)),
+                            EndBehaviour::Split(2),
+                        ));
                 }
                 TowerType::NoGun => {
                     commands.entity(tile_ent).insert(TowerComponent {});

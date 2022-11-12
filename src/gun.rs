@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+// use bevy_prototype_lyon::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::{enemy::Enemy, health::Health};
@@ -12,6 +13,8 @@ impl Plugin for GunPlugin {
         app.add_event::<KillEvent>()
             .add_system(tick_bullets)
             .add_system(tick_guns)
+            .add_system(spawn_bomb_visuals.before(tick_explosions))
+            .add_system(tick_explosions)
             .add_system(update_killcount);
     }
 }
@@ -88,9 +91,9 @@ pub struct Gun {
 }
 
 impl Gun {
-    pub fn new(gun_type: GunType) -> Self {
+    pub fn new(gun_type: GunType, end_behaviour: EndBehaviour) -> Self {
         Gun {
-            bullet: Bullet::new(Vec2::ZERO, 1),
+            bullet: Bullet::new(Vec2::ZERO, 1, end_behaviour),
             timer_between_shots: Timer::from_seconds(0.3, true),
             current_shots: 6,
             clip_size: 6,
@@ -202,6 +205,48 @@ enum GunState {
     Reloading,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum EndBehaviour {
+    None,
+    Explode(ExplosionInfo),
+    Split(u32),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ExplosionInfo {
+    radius: f32,
+    damage: u32,
+}
+
+impl ExplosionInfo {
+    pub fn new(radius: f32, damage: u32) -> Self {
+        ExplosionInfo { radius, damage }
+    }
+}
+
+#[derive(Component)]
+struct ExplosionComponent {
+    damage: u32,
+    damage_timer: Timer,
+    visual_timer: Timer,
+    parent_entity: Entity,
+    pos: Vec3,
+    radius: f32,
+}
+
+impl ExplosionComponent {
+    fn new(damage: u32, parent_entity: Entity, pos: Vec3, radius: f32) -> Self {
+        ExplosionComponent {
+            damage,
+            damage_timer: Timer::from_seconds(0.2, false),
+            visual_timer: Timer::from_seconds(0.5, false),
+            parent_entity,
+            pos,
+            radius,
+        }
+    }
+}
+
 #[derive(Component)]
 struct Bullet {
     dir: Vec2,
@@ -210,10 +255,12 @@ struct Bullet {
     lifetime: Timer,
     self_entity: Option<Entity>,
     parent_entity: Option<Entity>,
+    end_behaviour: EndBehaviour,
 }
 
 impl Bullet {
-    fn new(dir: Vec2, damage: u32) -> Self {
+    // dir isn't used. It is reset by Bullet.spawn
+    fn new(dir: Vec2, damage: u32, end_behaviour: EndBehaviour) -> Self {
         Bullet {
             dir,
             speed: 100.0,
@@ -221,6 +268,7 @@ impl Bullet {
             lifetime: Timer::from_seconds(2.0, false),
             self_entity: None,
             parent_entity: None,
+            end_behaviour,
         }
     }
 
@@ -243,7 +291,8 @@ impl Bullet {
                     ..default()
                 },
                 transform: Transform {
-                    translation: pos,
+                    // draw above the background
+                    translation: Vec3::new(pos.x, pos.y, pos.z + 0.1),
                     ..default()
                 },
                 ..default()
@@ -256,13 +305,68 @@ impl Bullet {
             // need to change dir too
             // .insert(self.clone().update_entity(ent).update_parent(parent))
             .insert(
-                Bullet::new(dir, self.damage)
+                Bullet::new(dir, self.damage, self.end_behaviour)
                     .update_entity(ent)
                     .update_parent(parent),
             )
             .insert(RigidBody::Dynamic)
             .insert(Collider::ball(8.0))
             .insert(Sensor);
+    }
+
+    fn end_of_life(&self, commands: &mut Commands, pos: Vec3) {
+        match self.end_behaviour {
+            EndBehaviour::None => self.despawn(commands),
+            EndBehaviour::Explode(info) => {
+                // println!("Boom! {:?} {:?}", info.radius, info.damage);
+
+                // let b = Bullet::new(Vec2::ZERO, info.damage, EndBehaviour::None);
+                // b.spawn(commands, pos, Vec2::ZERO, self.parent_entity.unwrap());
+
+                // spawn a bomb
+                commands
+                    .spawn_bundle(SpatialBundle {
+                        // transform will be reset when the bomb visuals are added i think
+                        transform: Transform::from_translation(pos),
+                        ..default()
+                    })
+                    .insert(ExplosionComponent::new(
+                        info.damage,
+                        self.parent_entity.unwrap(),
+                        pos,
+                        info.radius,
+                    ))
+                    .insert(Collider::ball(info.radius))
+                    .insert(Sensor);
+
+                // remove the bullet that's life has ended
+                self.despawn(commands);
+            }
+            EndBehaviour::Split(num) => {
+                if num > 0 {
+                    // println!("Split! {:?}", num);
+                    let b = Bullet::new(Vec2::ONE, self.damage, EndBehaviour::Split(num - 1));
+                    // rotate some degrees
+                    let degrees = 10.0f32;
+                    // deg to rad = 0.01745329251
+                    let x = f32::cos(degrees.to_radians());
+                    let y = f32::sin(degrees.to_radians());
+                    b.spawn(
+                        commands,
+                        pos,
+                        self.dir.rotate(Vec2::new(x, y)),
+                        self.parent_entity.unwrap(),
+                    );
+                    b.spawn(
+                        commands,
+                        pos,
+                        self.dir.rotate(Vec2::new(x, -y)),
+                        self.parent_entity.unwrap(),
+                    );
+                }
+                self.despawn(commands);
+            }
+        }
     }
 
     fn despawn(&self, commands: &mut Commands) {
@@ -314,8 +418,69 @@ fn tick_bullets(
         // might need to split these up later
         if hit_something || bullet.lifetime.tick(time.delta()).just_finished() {
             //die
-            bullet.despawn(&mut commands);
+            // bullet.despawn(&mut commands);
+            bullet.end_of_life(&mut commands, trans.translation);
         }
+    }
+}
+
+fn tick_explosions(
+    mut commands: Commands,
+    mut q_explosions: Query<(Entity, &mut ExplosionComponent)>,
+    rapier_context: Res<RapierContext>,
+    mut q_enemies: Query<(Entity, &mut Enemy, &mut Health)>,
+    mut ev_kill: EventWriter<KillEvent>,
+    time: Res<Time>,
+) {
+    for (bomb_ent, mut bomb) in q_explosions.iter_mut() {
+        if bomb.damage_timer.tick(time.delta()).just_finished() {
+            // remove collider
+            commands.entity(bomb_ent).remove::<Collider>();
+            // println!("Bomb safe {:?} {:?}", bomb_ent, bomb.pos);
+        }
+        if bomb.visual_timer.tick(time.delta()).just_finished() {
+            commands.entity(bomb_ent).despawn_recursive();
+            // println!("Bomb dead {:?} {:?}", bomb_ent, bomb.pos);
+        }
+
+        let collisions = rapier_context.intersections_with(bomb_ent);
+        for (a, b, hit) in collisions {
+            if hit {
+                let enemy_ent = if a == bomb_ent { b } else { a };
+
+                if let Ok((e_ent, enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
+                    health.take_damage(bomb.damage);
+                    if health.just_died() {
+                        ev_kill.send(KillEvent {
+                            tower: bomb.parent_entity,
+                        });
+                        enemy.die(&mut commands, e_ent);
+                        // commands.entity(e_ent).despawn_recursive();
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn spawn_bomb_visuals(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    q_explosions: Query<(Entity, &ExplosionComponent), Added<ExplosionComponent>>,
+) {
+    for (entity, bomb) in q_explosions.iter() {
+        // println!("Spawn bomb visuals {:?}", entity);
+        // this should reset the transform that's already there
+        commands.entity(entity).insert_bundle(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(bomb.radius).into()).into(),
+            material: materials.add(ColorMaterial::from(Color::ORANGE)),
+            transform: Transform::from_translation(bomb.pos),
+            ..default()
+        });
+        // commands.entity(entity)
+        //     .insert(Mesh2dHandle{meshes.add(shape::Circle::new(bomb.radius).into()).into()})
+        //     .insert(Handle?)
     }
 }
 
@@ -331,7 +496,17 @@ fn update_killcount(mut ev_kill: EventReader<KillEvent>, mut q_towers: Query<&mu
             gun.kill_count += 1;
             // println!("Updated killcount: {:?}", gun.kill_count);
             if gun.kill_count % 5 == 0 {
-                gun.bullet.damage += 1;
+                match gun.bullet.end_behaviour {
+                    EndBehaviour::Explode(mut info) => {
+                        info.damage += 1;
+                        // upgrade the damage of the bomb instead of the bullet
+                        gun.bullet.end_behaviour = EndBehaviour::Explode(info);
+                    }
+                    _ => {
+                        gun.bullet.damage += 1;
+                    }
+                }
+                // gun.bullet.damage += 1;
                 println!("Five kills. Damage up {:?}", gun.bullet.damage);
             }
         }

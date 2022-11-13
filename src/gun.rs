@@ -34,6 +34,7 @@ pub enum GunType {
     Pistol,
     Shotgun,
     Burst(BurstInfo),
+    Bomb,
 }
 
 // data the gun stores for how it operates
@@ -92,8 +93,13 @@ pub struct Gun {
 
 impl Gun {
     pub fn new(gun_type: GunType, end_behaviour: EndBehaviour) -> Self {
+        let b = if matches!(gun_type, GunType::Bomb) {
+            Bullet::new_arc(0, end_behaviour)
+        } else {
+            Bullet::new(1, end_behaviour)
+        };
         Gun {
-            bullet: Bullet::new(Vec2::ZERO, 1, end_behaviour),
+            bullet: b,
             timer_between_shots: Timer::from_seconds(0.3, true),
             current_shots: 6,
             clip_size: 6,
@@ -180,6 +186,11 @@ impl Gun {
                     self.current_shots -= 1;
                     return;
                 }
+                GunType::Bomb => {
+                    // let b = Bullet::new_arc(0, self.bullet.end_behaviour);
+                    // self.bullet = b;
+                    self.bullet.spawn(commands, pos, dir, parent_entity);
+                }
             }
 
             self.current_shots -= 1;
@@ -251,6 +262,7 @@ impl ExplosionComponent {
 struct Bullet {
     dir: Vec2,
     speed: f32,
+    movement: Movement,
     damage: u32,
     lifetime: Timer,
     self_entity: Option<Entity>,
@@ -260,16 +272,70 @@ struct Bullet {
 
 impl Bullet {
     // dir isn't used. It is reset by Bullet.spawn
-    fn new(dir: Vec2, damage: u32, end_behaviour: EndBehaviour) -> Self {
+    fn new(damage: u32, end_behaviour: EndBehaviour) -> Self {
         Bullet {
-            dir,
+            dir: Vec2::ZERO,
             speed: 100.0,
+            movement: Movement::Straight(Vec2::ZERO),
             damage,
             lifetime: Timer::from_seconds(2.0, false),
             self_entity: None,
             parent_entity: None,
             end_behaviour,
         }
+    }
+
+    fn new_arc(damage: u32, end_behaviour: EndBehaviour) -> Self {
+        Bullet {
+            dir: Vec2::ZERO,
+            speed: 100.0,
+            movement: Movement::Arc {
+                start_pos: Vec2::ZERO,
+                start_dir: Vec2::ZERO,
+                end_dir: Vec2::ZERO,
+            },
+            damage,
+            lifetime: Timer::from_seconds(2.0, false),
+            self_entity: None,
+            parent_entity: None,
+            end_behaviour,
+        }
+    }
+
+    fn update_dir(mut self, dir: Vec2) -> Self {
+        self.dir = dir;
+        match self.movement {
+            Movement::Straight(_) => {
+                self.movement = Movement::Straight(dir);
+            }
+            Movement::Arc {
+                start_pos,
+                start_dir,
+                end_dir,
+            } => todo!(),
+        }
+        self
+    }
+
+    fn update_arc(mut self, pos: Vec3, dir_og: Vec2) -> Self {
+        // og dir should be length 1
+        // it's mouse - pos normalized
+
+        // range of the bomb
+        let distance = 50.0;
+
+        let dir = dir_og * distance;
+        let mag = distance;
+        let start_dir = dir.lerp(Vec2::Y * mag * 5.0, 0.7);
+        let end_dir = dir - start_dir;
+
+        let m = Movement::Arc {
+            start_pos: pos.truncate(),
+            start_dir,
+            end_dir,
+        };
+        self.movement = m;
+        self
     }
 
     fn update_entity(mut self, entity: Entity) -> Self {
@@ -299,19 +365,38 @@ impl Bullet {
             })
             .id();
 
-        commands
-            .entity(ent)
-            // should it look more like this?
-            // need to change dir too
-            // .insert(self.clone().update_entity(ent).update_parent(parent))
-            .insert(
-                Bullet::new(dir, self.damage, self.end_behaviour)
+        if matches!(
+            self.movement,
+            Movement::Arc {
+                start_pos,
+                start_dir,
+                end_dir
+            }
+        ) {
+            // println!("Spawn a bomb");
+            // don't add collision to bombs that arc
+            commands.entity(ent).insert(
+                Bullet::new_arc(self.damage, self.end_behaviour)
                     .update_entity(ent)
-                    .update_parent(parent),
-            )
-            .insert(RigidBody::Dynamic)
-            .insert(Collider::ball(8.0))
-            .insert(Sensor);
+                    .update_parent(parent)
+                    .update_arc(pos, dir),
+            );
+        } else {
+            commands
+                .entity(ent)
+                // should it look more like this?
+                // need to change dir too
+                // .insert(self.clone().update_entity(ent).update_parent(parent))
+                .insert(
+                    Bullet::new(self.damage, self.end_behaviour)
+                        .update_entity(ent)
+                        .update_parent(parent)
+                        .update_dir(dir),
+                )
+                .insert(RigidBody::Dynamic)
+                .insert(Collider::ball(8.0))
+                .insert(Sensor);
+        }
     }
 
     fn end_of_life(&self, commands: &mut Commands, pos: Vec3) {
@@ -345,7 +430,7 @@ impl Bullet {
             EndBehaviour::Split(num) => {
                 if num > 0 {
                     // println!("Split! {:?}", num);
-                    let b = Bullet::new(Vec2::ONE, self.damage, EndBehaviour::Split(num - 1));
+                    let b = Bullet::new(self.damage, EndBehaviour::Split(num - 1));
                     // rotate some degrees
                     let degrees = 10.0f32;
                     // deg to rad = 0.01745329251
@@ -376,6 +461,16 @@ impl Bullet {
     }
 }
 
+#[derive(Debug)]
+enum Movement {
+    Straight(Vec2),
+    Arc {
+        start_pos: Vec2,
+        start_dir: Vec2,
+        end_dir: Vec2,
+    },
+}
+
 fn tick_bullets(
     mut commands: Commands,
     mut q_bullets: Query<(Entity, &mut Transform, &mut Bullet)>,
@@ -385,7 +480,27 @@ fn tick_bullets(
     time: Res<Time>,
 ) {
     for (bullet_ent, mut trans, mut bullet) in q_bullets.iter_mut() {
-        trans.translation += bullet.dir.extend(0.0) * bullet.speed * time.delta_seconds();
+        match bullet.movement {
+            Movement::Straight(dir) => {
+                trans.translation += dir.extend(0.0) * bullet.speed * time.delta_seconds();
+            }
+            Movement::Arc {
+                start_pos,
+                start_dir,
+                end_dir,
+            } => {
+                // println!("Moving bomb, {:?}", bullet.movement);
+                let t = bullet.lifetime.percent();
+
+                let start_lerp = Vec2::lerp(Vec2::ZERO, start_dir, t);
+                let end_lerp = Vec2::lerp(Vec2::ZERO, end_dir, t);
+
+                let pos = Vec2::lerp(start_lerp, start_lerp + end_lerp, t);
+                trans.translation = (start_pos + pos).extend(trans.translation.z);
+            }
+        }
+
+        // trans.translation += bullet.dir.extend(0.0) * bullet.speed * time.delta_seconds();
 
         // does it hit anything?
         let collisions = rapier_context.intersections_with(bullet_ent);
@@ -394,7 +509,7 @@ fn tick_bullets(
             if hit {
                 let enemy_ent = if a == bullet_ent { b } else { a };
 
-                if let Ok((e_ent, mut enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
+                if let Ok((_e_ent, _enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
                     // enemy.take_damage();
                     // println!("Killed something");
                     // println!(
@@ -407,7 +522,7 @@ fn tick_bullets(
                         ev_kill.send(KillEvent {
                             tower: bullet.parent_entity.unwrap(),
                         });
-                        commands.entity(e_ent).despawn_recursive();
+                        // commands.entity(e_ent).despawn_recursive();
                     }
 
                     hit_something = true;
@@ -448,13 +563,13 @@ fn tick_explosions(
             if hit {
                 let enemy_ent = if a == bomb_ent { b } else { a };
 
-                if let Ok((e_ent, enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
+                if let Ok((_e_ent, _enemy, mut health)) = q_enemies.get_mut(enemy_ent) {
                     health.take_damage(bomb.damage);
                     if health.just_died() {
                         ev_kill.send(KillEvent {
                             tower: bomb.parent_entity,
                         });
-                        enemy.die(&mut commands, e_ent);
+                        // enemy.die(&mut commands, e_ent);
                         // commands.entity(e_ent).despawn_recursive();
                     }
                 }
@@ -513,12 +628,12 @@ fn update_killcount(mut ev_kill: EventReader<KillEvent>, mut q_towers: Query<&mu
     }
 }
 
-pub struct ShootEvent {
-    pos: Vec3,
-    dir: Vec2,
-}
+// pub struct ShootEvent {
+//     pos: Vec3,
+//     dir: Vec2,
+// }
 
-fn shoot_system(mut ev_shoot: EventReader<ShootEvent>) {}
+// fn shoot_system(mut ev_shoot: EventReader<ShootEvent>) {}
 
 // send a shoot event
 // it will set the parameters on the gun

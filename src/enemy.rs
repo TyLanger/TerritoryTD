@@ -10,7 +10,9 @@ pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(spawn_enemy).add_system(move_enemy);
+        app.add_system(spawn_enemy)
+            .add_system(move_enemy)
+            .add_system(enemy_death);
     }
 }
 
@@ -113,5 +115,16 @@ fn move_enemy(
         }
 
         trans.translation += enemy.dir.extend(0.0) * enemy.speed * time.delta_seconds();
+    }
+}
+
+fn enemy_death(
+    mut commands: Commands,
+    q_enemies: Query<(Entity, &Enemy, &Health), Changed<Health>>,
+) {
+    for (entity, enemy, health) in q_enemies.iter() {
+        if health.is_dead() {
+            enemy.die(&mut commands, entity);
+        }
     }
 }

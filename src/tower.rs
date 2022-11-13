@@ -62,6 +62,15 @@ fn build_tower_system(
                             EndBehaviour::Split(2),
                         ));
                 }
+                TowerType::Bomb => {
+                    commands
+                        .entity(tile_ent)
+                        .insert(TowerComponent {})
+                        .insert(Gun::new(
+                            GunType::Bomb,
+                            EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
+                        ));
+                }
                 TowerType::NoGun => {
                     commands.entity(tile_ent).insert(TowerComponent {});
                 }
@@ -128,6 +137,7 @@ enum TowerType {
     Pistol,
     Shotgun,
     Burst,
+    Bomb,
     NoGun,
 }
 struct BuildButtonEvent {
@@ -164,6 +174,7 @@ fn create_tower_store_ui(mut commands: Commands, fonts: Res<FontAssets>) {
                 TowerType::Pistol,
                 TowerType::Shotgun,
                 TowerType::Burst,
+                TowerType::Bomb,
                 TowerType::NoGun,
             ];
             for t in arr.iter() {

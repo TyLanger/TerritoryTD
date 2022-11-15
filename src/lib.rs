@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::{prelude::*, render::camera::RenderTarget};
 
 mod enemy;
@@ -33,8 +35,8 @@ enum GameState {
     Loading,
     MainMenu,
     // Tutorial,
-    Playing,
-    End,
+    // Playing,
+    // End,
 }
 
 pub struct MouseWorldPos(Vec2);

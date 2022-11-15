@@ -85,7 +85,7 @@ pub struct Gun {
     current_shots: u32,
     clip_size: u32,
     reload_timer: Timer,
-    num_bullets_shot: u32,
+    // num_bullets_shot: u32,
     state: GunState,
     gun_type: GunType,
     kill_count: u32,
@@ -104,7 +104,7 @@ impl Gun {
             current_shots: 6,
             clip_size: 6,
             reload_timer: Timer::from_seconds(1.0, true),
-            num_bullets_shot: 1,
+            // num_bullets_shot: 1,
             state: GunState::Ready,
             gun_type,
             kill_count: 0,
@@ -304,16 +304,19 @@ impl Bullet {
 
     fn update_dir(mut self, dir: Vec2) -> Self {
         self.dir = dir;
-        match self.movement {
-            Movement::Straight(_) => {
-                self.movement = Movement::Straight(dir);
-            }
-            Movement::Arc {
-                start_pos,
-                start_dir,
-                end_dir,
-            } => todo!(),
+        if matches!(self.movement, Movement::Straight(_)) {
+            self.movement = Movement::Straight(dir);
         }
+        // match self.movement {
+        //     Movement::Straight(_) => {
+        //         self.movement = Movement::Straight(dir);
+        //     }
+        //     Movement::Arc {
+        //         start_pos,
+        //         start_dir,
+        //         end_dir,
+        //     } => todo!(),
+        // }
         self
     }
 
@@ -368,9 +371,9 @@ impl Bullet {
         if matches!(
             self.movement,
             Movement::Arc {
-                start_pos,
-                start_dir,
-                end_dir
+                start_pos: _,
+                start_dir: _,
+                end_dir: _
             }
         ) {
             // println!("Spawn a bomb");

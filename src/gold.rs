@@ -2,6 +2,8 @@ use std::f32::consts;
 
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
+use crate::grid::{Coords, Grid, Tile, TileType};
+
 pub struct GoldPlugin;
 
 impl Plugin for GoldPlugin {
@@ -16,12 +18,14 @@ impl Plugin for GoldPlugin {
 #[derive(Component)]
 pub struct GoldSpawner {
     timer: Timer,
+    range: u32,
 }
 
 impl GoldSpawner {
     pub fn new() -> Self {
         GoldSpawner {
             timer: Timer::from_seconds(3.0, true),
+            range: 2,
         }
     }
 }
@@ -44,27 +48,38 @@ struct SpawnGoldEvent {
 }
 
 fn tick_spawner(
+    q_tiles: Query<(&Transform, &Tile)>,
     mut q_gold_spawners: Query<(&Transform, &mut GoldSpawner)>,
     mut ev_spawn: EventWriter<SpawnGoldEvent>,
     time: Res<Time>,
+    grid: Res<Grid>,
 ) {
     // is &mut query a better pattern than
     // query.iter_mut() ?
+
+    // for each spawner, spawn gold in the range around it
+    // only spawn gold on friendly territory
     for (trans, mut spawner) in &mut q_gold_spawners {
         if spawner.timer.tick(time.delta()).just_finished() {
             // println!("Spawn a gold");
-            ev_spawn.send(SpawnGoldEvent {
-                pos: trans.translation,
-            });
-            // spawn nearby too
-            // if a tile is friendly, spawn a gold.
-            // grid.get_diamond_ring
-            // grid.get_neighbours
-            // could have range be a float
-            // range 1 is 4-connected
-            // range 1.5 is 8-connected
-            // range 2 is 8-connected plus the 4 extra
-            // gets more granular as it gets higher, not just 1, 1.5
+            let center_coords = Coords::from_vec2(trans.translation.truncate());
+            for i in 0..=spawner.range {
+                // get coords in range
+                let neighbours = grid.get_diamond_ring(center_coords, i as usize);
+                // iterate over each coord that exists
+                for n in neighbours.iter().flatten() {
+                    // does it have a tile?
+                    if let Ok((tile_trans, tile)) = q_tiles.get(*n) {
+                        // does tile.tile_type match my allegience?
+                        if matches!(tile.tile_type, TileType::Friendly) {
+                            // spawn a gold there
+                            ev_spawn.send(SpawnGoldEvent {
+                                pos: tile_trans.translation,
+                            });
+                        }
+                    }
+                }
+            }
         }
     }
 }

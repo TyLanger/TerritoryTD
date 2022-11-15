@@ -105,10 +105,8 @@ impl Tile {
                     if sprite.color != tile_colours.even_grass {
                         sprite.color = tile_colours.even_grass;
                     }
-                } else {
-                    if sprite.color != tile_colours.odd_grass {
-                        sprite.color = tile_colours.odd_grass;
-                    }
+                } else if sprite.color != tile_colours.odd_grass {
+                    sprite.color = tile_colours.odd_grass;
                 }
             }
             TileType::Friendly => {
@@ -116,10 +114,8 @@ impl Tile {
                     if sprite.color != tile_colours.even_friend {
                         sprite.color = tile_colours.even_friend;
                     }
-                } else {
-                    if sprite.color != tile_colours.odd_friend {
-                        sprite.color = tile_colours.odd_friend;
-                    }
+                } else if sprite.color != tile_colours.odd_friend {
+                    sprite.color = tile_colours.odd_friend;
                 }
             }
             TileType::Hostile => {
@@ -127,10 +123,8 @@ impl Tile {
                     if sprite.color != tile_colours.even_hostile {
                         sprite.color = tile_colours.even_hostile;
                     }
-                } else {
-                    if sprite.color != tile_colours.odd_hostile {
-                        sprite.color = tile_colours.odd_hostile;
-                    }
+                } else if sprite.color != tile_colours.odd_hostile {
+                    sprite.color = tile_colours.odd_hostile;
                 }
             }
         }
@@ -220,8 +214,8 @@ impl Grid {
     /// This will get a diamond shape `distance` tiles away from `center`.</br>
     /// `distance`: 1 is the 4 cardinal neighbours around the tile.</br>
     /// `distance`: 2 is the 8 tiles in a diamond adjacent to those 4.
-    #[allow(unused_comparisons)] // reason = "Compare >= 0 before converting to usize")
-    fn get_diamond_ring(&self, center: Coords, distance: usize) -> Vec<Option<Entity>> {
+    // #[allow(unused_comparisons)] // reason = "Compare >= 0 before converting to usize")
+    pub fn get_diamond_ring(&self, center: Coords, distance: usize) -> Vec<Option<Entity>> {
         let mut v = Vec::new();
 
         let x = center.x;
@@ -241,7 +235,7 @@ impl Grid {
         let mut up_x = x as i32;
         let mut up_y = (y + distance) as i32;
         for _ in 0..distance {
-            if x >= 0 && y >= 0 {
+            if up_x >= 0 && up_y >= 0 {
                 v.push(self.get_xy(up_x as usize, up_y as usize));
             }
             // move down right
@@ -252,7 +246,7 @@ impl Grid {
         let mut right_x = (x + distance) as i32;
         let mut right_y = y as i32;
         for _ in 0..distance {
-            if x >= 0 && y >= 0 {
+            if right_x >= 0 && right_y >= 0 {
                 v.push(self.get_xy(right_x as usize, right_y as usize));
             }
             // move down left
@@ -263,7 +257,7 @@ impl Grid {
         let mut down_x = x as i32;
         let mut down_y = y as i32 - distance as i32;
         for _ in 0..distance {
-            if x >= 0 && y >= 0 {
+            if down_x >= 0 && down_y >= 0 {
                 v.push(self.get_xy(down_x as usize, down_y as usize));
             }
             // move up left
@@ -274,7 +268,7 @@ impl Grid {
         let mut left_x = x as i32 - distance as i32;
         let mut left_y = y as i32;
         for _ in 0..distance {
-            if x >= 0 && y >= 0 {
+            if left_x >= 0 && left_y >= 0 {
                 v.push(self.get_xy(left_x as usize, left_y as usize));
             }
             // move up right
@@ -467,7 +461,7 @@ fn change_allegiance(
     grid: Res<Grid>,
 ) {
     for ev in ev_change.iter() {
-        for i in 0..ev.range {
+        for i in 0..=ev.range {
             let neighbours = grid.get_diamond_ring(ev.center_coords, i as usize);
             for n in neighbours.iter().flatten() {
                 if let Ok(mut tile) = q_tiles.get_mut(*n) {

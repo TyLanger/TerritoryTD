@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     gold::GoldSpawner,
-    grid::{ChangeAllegianceEvent, ClearSelectionsEvent, Selection, TerritoryGrabber, Tile},
+    grid::{ClearSelectionsEvent, Selection, TerritoryGrabber, Tile},
     gun::{BurstInfo, EndBehaviour, ExplosionInfo, Gun, GunType},
     loading::FontAssets,
     GameState, MouseWorldPos,

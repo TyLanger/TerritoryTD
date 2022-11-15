@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 
 use crate::{
-    grid::{ChangeAllegianceEvent, ClearSelectionsEvent, Selection, Tile},
+    gold::GoldSpawner,
+    grid::{ChangeAllegianceEvent, ClearSelectionsEvent, Selection, TerritoryGrabber, Tile},
     gun::{BurstInfo, EndBehaviour, ExplosionInfo, Gun, GunType},
     loading::FontAssets,
     GameState, MouseWorldPos,
@@ -25,24 +26,20 @@ fn build_tower_system(
     mut commands: Commands,
     mut q_selection: Query<(Entity, &mut Tile), With<Selection>>,
     mut ev_clear: EventWriter<ClearSelectionsEvent>,
-    mut ev_allegiance: EventWriter<ChangeAllegianceEvent>,
     mut ev_build: EventReader<BuildButtonEvent>,
 ) {
     for ev in ev_build.iter() {
         ev_clear.send(ClearSelectionsEvent);
         for (tile_ent, mut tile) in q_selection.iter_mut() {
             tile.cost = 200; // don't walk over towers
-            ev_allegiance.send(ChangeAllegianceEvent {
-                center_coords: tile.coords,
-                range: 4,
-            });
 
             match ev.tower_type {
                 TowerType::Pistol => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(GunType::Pistol, EndBehaviour::None));
+                        .insert(Gun::new(GunType::Pistol, EndBehaviour::None))
+                        .insert(TerritoryGrabber::new(4));
                 }
                 TowerType::Shotgun => {
                     commands
@@ -51,7 +48,8 @@ fn build_tower_system(
                         .insert(Gun::new(
                             GunType::Shotgun,
                             EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
-                        ));
+                        ))
+                        .insert(TerritoryGrabber::new(2));
                 }
                 TowerType::Burst => {
                     commands
@@ -60,7 +58,8 @@ fn build_tower_system(
                         .insert(Gun::new(
                             GunType::Burst(BurstInfo::from(0.1, 3)),
                             EndBehaviour::Split(2),
-                        ));
+                        ))
+                        .insert(TerritoryGrabber::new(3));
                 }
                 TowerType::Bomb => {
                     commands
@@ -69,30 +68,19 @@ fn build_tower_system(
                         .insert(Gun::new(
                             GunType::Bomb,
                             EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
-                        ));
+                        ))
+                        .insert(TerritoryGrabber::new(3));
                 }
                 TowerType::NoGun => {
-                    commands.entity(tile_ent).insert(TowerComponent {});
+                    commands
+                        .entity(tile_ent)
+                        .insert(TowerComponent {})
+                        .insert(GoldSpawner::new());
                 }
             }
         }
     }
 }
-
-// maybe Tower Trait
-// shoot
-// TowerComponent {
-// tower: Tower
-// }
-// Query<TowerComponent>
-// towercomponent.tower.shoot(command, etc)
-
-// Tower Brain
-// chooses when to shoot
-// FastBrain
-// shoots every 0.5s
-// SlowBrain
-// shoots every 2s
 
 fn tower_shoot(
     mut commands: Commands,
@@ -114,10 +102,6 @@ fn tower_shoot(
 struct TowerComponent {
     // gun: Gun,
     // brain: Box<dyn TowerBrain>,
-}
-
-trait TowerBrain: Sync + Send {
-    fn think(&self);
 }
 
 // Maybe bundles is the way to go?

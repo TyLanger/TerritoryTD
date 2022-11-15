@@ -1,4 +1,4 @@
-use std::f32::consts::FRAC_PI_2;
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::prelude::*;
 
@@ -23,7 +23,8 @@ impl Plugin for GridPlugin {
         // .add_system(change_alegience.after(tile_interaction))
         .add_system(change_allegiance.after(tile_interaction))
         // .add_system(change_colour_animation)
-        .add_system(territory_flip_animation);
+        .add_system(territory_flip_animation)
+        .add_system(grab_territory);
     }
 }
 
@@ -484,6 +485,41 @@ fn change_allegiance(
                     commands.entity(*n).insert(TerritoryFlipper::new(10 * i));
                 }
             }
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct TerritoryGrabber {
+    range: u32,
+    timer: Timer,
+    // my allegiance to refresh instead of cycling.
+    // todo
+}
+
+impl TerritoryGrabber {
+    pub fn new(range: u32) -> Self {
+        let mut timer = Timer::from_seconds(10.0, true);
+        // ticks immediately the first time
+        // if it's exact, I need grab_territory to run after whatever system
+        // that inserts the component
+        timer.tick(Duration::from_secs_f32(9.9));
+        TerritoryGrabber { range, timer }
+    }
+}
+
+fn grab_territory(
+    mut q_grabber: Query<(&Tile, &mut TerritoryGrabber)>,
+    mut ev_allegiance: EventWriter<ChangeAllegianceEvent>,
+    time: Res<Time>,
+) {
+    for (tile, mut grabber) in &mut q_grabber {
+        if grabber.timer.tick(time.delta()).just_finished() {
+            // send
+            ev_allegiance.send(ChangeAllegianceEvent {
+                center_coords: tile.coords,
+                range: grabber.range,
+            });
         }
     }
 }

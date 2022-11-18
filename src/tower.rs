@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::{
     gold::GoldSpawner,
     grid::{ClearSelectionsEvent, Selection, TerritoryGrabber, Tile},
-    gun::{BurstInfo, EndBehaviour, ExplosionInfo, Gun, GunType},
+    gun::{BasicGunInfo, Bullet, BurstInfo, EndBehaviour, ExplosionInfo, Gun, GunType},
     loading::FontAssets,
     GameState, MouseWorldPos,
 };
@@ -38,37 +38,50 @@ fn build_tower_system(
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(GunType::Pistol, EndBehaviour::None))
+                        .insert(Gun::from_basic_gun_info(BasicGunInfo::default()))
                         .insert(TerritoryGrabber::new(4));
                 }
                 TowerType::Shotgun => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(
-                            GunType::Shotgun,
-                            EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
-                        ))
+                        .insert(Gun::from_basic_gun_info(BasicGunInfo {
+                            bullet: Bullet::new(
+                                1,
+                                EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
+                            ),
+                            // can change these fields from the default
+                            // time_between_shots: 0.3,
+                            // clip_size: 6,
+                            // time_to_reload: 1.0,
+                            gun_type: GunType::Shotgun,
+                            ..default()
+                        }))
                         .insert(TerritoryGrabber::new(2));
                 }
                 TowerType::Burst => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(
-                            GunType::Burst(BurstInfo::from(0.1, 3)),
-                            EndBehaviour::Split(2),
-                        ))
+                        .insert(Gun::from_basic_gun_info(BasicGunInfo {
+                            bullet: Bullet::new(1, EndBehaviour::Split(2)),
+                            gun_type: GunType::Burst(BurstInfo::from(0.1, 3)),
+                            ..default()
+                        }))
                         .insert(TerritoryGrabber::new(3));
                 }
                 TowerType::Bomb => {
                     commands
                         .entity(tile_ent)
                         .insert(TowerComponent {})
-                        .insert(Gun::new(
-                            GunType::Bomb,
-                            EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
-                        ))
+                        .insert(Gun::from_basic_gun_info(BasicGunInfo {
+                            bullet: Bullet::new_arc(
+                                0,
+                                EndBehaviour::Explode(ExplosionInfo::new(30.0, 5)),
+                            ),
+                            gun_type: GunType::Bomb,
+                            ..default()
+                        }))
                         .insert(TerritoryGrabber::new(3));
                 }
                 TowerType::NoGun => {

@@ -78,6 +78,28 @@ impl BurstInfoStorage {
     }
 }
 
+// basic info needed for a gun
+// none of the derived info like timers
+pub struct BasicGunInfo {
+    pub bullet: Bullet,
+    pub time_between_shots: f32,
+    pub clip_size: u32,
+    pub time_to_reload: f32,
+    pub gun_type: GunType,
+}
+
+impl Default for BasicGunInfo {
+    fn default() -> Self {
+        Self {
+            bullet: Bullet::new(1, EndBehaviour::None),
+            time_between_shots: 0.3,
+            clip_size: 6,
+            time_to_reload: 1.0,
+            gun_type: GunType::Pistol,
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct Gun {
     bullet: Bullet,
@@ -92,6 +114,7 @@ pub struct Gun {
 }
 
 impl Gun {
+    #[allow(dead_code)]
     pub fn new(gun_type: GunType, end_behaviour: EndBehaviour) -> Self {
         let b = if matches!(gun_type, GunType::Bomb) {
             Bullet::new_arc(0, end_behaviour)
@@ -107,6 +130,19 @@ impl Gun {
             // num_bullets_shot: 1,
             state: GunState::Ready,
             gun_type,
+            kill_count: 0,
+        }
+    }
+
+    pub fn from_basic_gun_info(gun_info: BasicGunInfo) -> Self {
+        Gun {
+            bullet: gun_info.bullet,
+            timer_between_shots: Timer::from_seconds(gun_info.time_between_shots, true),
+            current_shots: gun_info.clip_size,
+            clip_size: gun_info.clip_size,
+            reload_timer: Timer::from_seconds(gun_info.time_to_reload, true),
+            state: GunState::Ready,
+            gun_type: gun_info.gun_type,
             kill_count: 0,
         }
     }
@@ -259,7 +295,7 @@ impl ExplosionComponent {
 }
 
 #[derive(Component)]
-struct Bullet {
+pub struct Bullet {
     dir: Vec2,
     speed: f32,
     movement: Movement,
@@ -272,7 +308,7 @@ struct Bullet {
 
 impl Bullet {
     // dir isn't used. It is reset by Bullet.spawn
-    fn new(damage: u32, end_behaviour: EndBehaviour) -> Self {
+    pub fn new(damage: u32, end_behaviour: EndBehaviour) -> Self {
         Bullet {
             dir: Vec2::ZERO,
             speed: 100.0,
@@ -285,7 +321,7 @@ impl Bullet {
         }
     }
 
-    fn new_arc(damage: u32, end_behaviour: EndBehaviour) -> Self {
+    pub fn new_arc(damage: u32, end_behaviour: EndBehaviour) -> Self {
         Bullet {
             dir: Vec2::ZERO,
             speed: 100.0,

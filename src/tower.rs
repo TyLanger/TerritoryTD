@@ -101,13 +101,8 @@ fn tower_shoot(
     mouse: Res<MouseWorldPos>,
 ) {
     for (entity, trans, _tower, mut gun) in q_towers.iter_mut() {
-        let dir = mouse.0 - trans.translation.truncate();
-        gun.shoot(
-            &mut commands,
-            trans.translation,
-            dir.normalize_or_zero(),
-            entity,
-        );
+        // let dir = mouse.0 - trans.translation.truncate();
+        gun.shoot(&mut commands, trans.translation, mouse.0, entity);
     }
 }
 

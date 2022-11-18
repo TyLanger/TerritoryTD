@@ -61,18 +61,18 @@ struct BurstInfoStorage {
     base_timer: f32,
     shots_left: u32,
     pos: Vec3,
-    dir: Vec2,
+    target_pos: Vec2,
     parent_entity: Entity,
 }
 
 impl BurstInfoStorage {
-    fn new(info: BurstInfo, pos: Vec3, dir: Vec2, parent_entity: Entity) -> Self {
+    fn new(info: BurstInfo, pos: Vec3, target_pos: Vec2, parent_entity: Entity) -> Self {
         BurstInfoStorage {
             timer: info.base_timer,
             base_timer: info.base_timer,
             shots_left: info.max_shots - 1,
             pos,
-            dir,
+            target_pos,
             parent_entity,
         }
     }
@@ -162,7 +162,8 @@ impl Gun {
             GunState::Firing(mut b) => {
                 b.timer -= delta.as_secs_f32();
                 if b.timer < 0.0 {
-                    self.bullet.spawn(commands, b.pos, b.dir, b.parent_entity);
+                    self.bullet
+                        .spawn(commands, b.pos, b.target_pos, b.parent_entity);
                     // b.shots is number in the burst
                     // self.current_shots is the number in your clip
                     b.shots_left -= 1;
@@ -188,7 +189,13 @@ impl Gun {
         }
     }
 
-    pub fn shoot(&mut self, commands: &mut Commands, pos: Vec3, dir: Vec2, parent_entity: Entity) {
+    pub fn shoot(
+        &mut self,
+        commands: &mut Commands,
+        pos: Vec3,
+        target_pos: Vec2,
+        parent_entity: Entity,
+    ) {
         if self.state == GunState::Ready {
             // spawn a bullet somehow
             // what do you need to spawn a bullet?
@@ -196,25 +203,25 @@ impl Gun {
             // position, direction, etc.
             match self.gun_type {
                 GunType::Pistol => {
-                    self.bullet.spawn(commands, pos, dir, parent_entity);
+                    self.bullet.spawn(commands, pos, target_pos, parent_entity);
                 }
                 GunType::Shotgun => {
                     self.bullet.spawn(
                         commands,
                         pos + Vec3::new(0.0, 10.0, 0.0),
-                        dir,
+                        target_pos,
                         parent_entity,
                     );
                     self.bullet.spawn(
                         commands,
                         pos + Vec3::new(0.0, -10.0, 0.0),
-                        dir,
+                        target_pos,
                         parent_entity,
                     );
                 }
                 GunType::Burst(b) => {
-                    self.bullet.spawn(commands, pos, dir, parent_entity);
-                    let storage = BurstInfoStorage::new(b, pos, dir, parent_entity);
+                    self.bullet.spawn(commands, pos, target_pos, parent_entity);
+                    let storage = BurstInfoStorage::new(b, pos, target_pos, parent_entity);
                     self.state = GunState::Firing(storage);
                     // println!("Start burst");
                     // return to not go into shotCooldown
@@ -225,7 +232,7 @@ impl Gun {
                 GunType::Bomb => {
                     // let b = Bullet::new_arc(0, self.bullet.end_behaviour);
                     // self.bullet = b;
-                    self.bullet.spawn(commands, pos, dir, parent_entity);
+                    self.bullet.spawn(commands, pos, target_pos, parent_entity);
                 }
             }
 
@@ -338,6 +345,36 @@ impl Bullet {
         }
     }
 
+    pub fn new_arc_complete(
+        damage: u32,
+        pos: Vec3,
+        target_pos: Vec2,
+        end_behaviour: EndBehaviour,
+        self_entity: Entity,
+        parent_entity: Entity,
+    ) -> Self {
+        Bullet {
+            // not used for arcs
+            dir: Vec2::ZERO,
+            speed: 0.0,
+            damage,
+
+            // will be computed by update_arc
+            movement: Movement::Arc {
+                start_pos: Vec2::ZERO,
+                start_dir: Vec2::ZERO,
+                end_dir: Vec2::ZERO,
+            },
+            lifetime: Timer::from_seconds(2.0, false),
+
+            // only these really matter
+            self_entity: Some(self_entity),
+            parent_entity: Some(parent_entity),
+            end_behaviour,
+        }
+        .update_arc(pos, target_pos)
+    }
+
     fn update_dir(mut self, dir: Vec2) -> Self {
         self.dir = dir;
         if matches!(self.movement, Movement::Straight(_)) {
@@ -356,17 +393,30 @@ impl Bullet {
         self
     }
 
-    fn update_arc(mut self, pos: Vec3, dir_og: Vec2) -> Self {
-        // og dir should be length 1
-        // it's mouse - pos normalized
+    fn update_arc(mut self, pos: Vec3, target_pos: Vec2) -> Self {
+        let min_dist = 1.0;
+        let max_dist = 100.0;
+        let min_time = 0.4;
+        let max_time = 2.0;
 
-        // range of the bomb
-        let distance = 50.0;
+        let dir_to_target = target_pos - pos.truncate();
+        // min and max range of the bomb
+        let dir_to_target = dir_to_target.clamp_length(min_dist, max_dist);
+        let mag = dir_to_target.length();
 
-        let dir = dir_og * distance;
-        let mag = distance;
-        let start_dir = dir.lerp(Vec2::Y * mag * 5.0, 0.7);
-        let end_dir = dir - start_dir;
+        // reverse of a lerp
+        // percent between min and max
+        // 20, 30. 22 is 0.2
+        // mag - min = 22 - 20   2
+        // --------- = ------- = -
+        // max - min = 30 - 20   10
+        let percent_of_max = (mag - min_dist) / (max_dist - min_dist);
+        let lifetime = min_time * (1.0 - percent_of_max) + max_time * percent_of_max;
+        // println!("Bomb with lifetime {:?}s", lifetime);
+        self.lifetime = Timer::from_seconds(lifetime, false);
+
+        let start_dir = dir_to_target.lerp(Vec2::Y * mag * 5.0, 0.7);
+        let end_dir = dir_to_target - start_dir;
 
         let m = Movement::Arc {
             start_pos: pos.truncate(),
@@ -387,7 +437,7 @@ impl Bullet {
         self
     }
 
-    fn spawn(&self, commands: &mut Commands, pos: Vec3, dir: Vec2, parent: Entity) {
+    fn spawn(&self, commands: &mut Commands, pos: Vec3, target_pos: Vec2, parent: Entity) {
         let ent = commands
             .spawn_bundle(SpriteBundle {
                 sprite: Sprite {
@@ -412,14 +462,15 @@ impl Bullet {
                 end_dir: _
             }
         ) {
-            // println!("Spawn a bomb");
-            // don't add collision to bombs that arc
-            commands.entity(ent).insert(
-                Bullet::new_arc(self.damage, self.end_behaviour)
-                    .update_entity(ent)
-                    .update_parent(parent)
-                    .update_arc(pos, dir),
-            );
+            // bombs don't need collision when travelling in the arc.
+            commands.entity(ent).insert(Bullet::new_arc_complete(
+                self.damage,
+                pos,
+                target_pos,
+                self.end_behaviour,
+                ent,
+                parent,
+            ));
         } else {
             commands
                 .entity(ent)
@@ -430,7 +481,7 @@ impl Bullet {
                     Bullet::new(self.damage, self.end_behaviour)
                         .update_entity(ent)
                         .update_parent(parent)
-                        .update_dir(dir),
+                        .update_dir((target_pos - pos.truncate()).normalize_or_zero()),
                 )
                 .insert(RigidBody::Dynamic)
                 .insert(Collider::ball(8.0))

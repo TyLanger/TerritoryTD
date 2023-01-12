@@ -9,6 +9,8 @@ mod grid;
 mod gun;
 mod health;
 mod loading;
+mod resource_container;
+mod swap;
 mod tower;
 mod wall;
 
@@ -26,6 +28,8 @@ impl Plugin for GamePlugin {
             .add_plugin(gun::GunPlugin)
             .add_plugin(tower::TowerPlugin)
             .add_plugin(gold::GoldPlugin)
+            .add_plugin(resource_container::ResourcePlugin)
+            .add_plugin(swap::SwapPlugin)
             .add_system(update_mouse_position);
     }
 }

@@ -2,7 +2,10 @@ use std::f32::consts;
 
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
-use crate::grid::{Coords, Grid, Tile, TileType};
+use crate::{
+    grid::{Coords, Grid, Tile, TileType},
+    resource_container::Resource,
+};
 
 pub struct GoldPlugin;
 
@@ -48,7 +51,7 @@ struct SpawnGoldEvent {
 }
 
 fn tick_spawner(
-    q_tiles: Query<(&Transform, &Tile)>,
+    mut q_tiles: Query<(&Transform, &Tile, &mut Resource)>,
     mut q_gold_spawners: Query<(&Transform, &mut GoldSpawner)>,
     mut ev_spawn: EventWriter<SpawnGoldEvent>,
     time: Res<Time>,
@@ -69,13 +72,23 @@ fn tick_spawner(
                 // iterate over each coord that exists
                 for n in neighbours.iter().flatten() {
                     // does it have a tile?
-                    if let Ok((tile_trans, tile)) = q_tiles.get(*n) {
+                    if let Ok((tile_trans, tile, mut res)) = q_tiles.get_mut(*n) {
                         // does tile.tile_type match my allegience?
                         if matches!(tile.tile_type, TileType::Friendly) {
                             // spawn a gold there
                             ev_spawn.send(SpawnGoldEvent {
                                 pos: tile_trans.translation,
                             });
+
+                            match *res {
+                                Resource::None => {
+                                    *res = Resource::Gold(1);
+                                }
+                                Resource::Gold(mut count) => {
+                                    count += 1;
+                                    *res = Resource::Gold(count);
+                                }
+                            }
                         }
                     }
                 }

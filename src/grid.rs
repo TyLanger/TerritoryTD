@@ -508,27 +508,26 @@ fn drag_selection(
 }
 
 fn swap_selection(
-    mut q_dragged: Query<(&Transform, &mut Draggable), With<Dragged>>,
-    mut q_draggable: Query<(&mut Transform, &mut Draggable), Without<Dragged>>,
+    mut q_dragged: Query<(&Transform, &mut Tile, &mut Draggable), With<Dragged>>,
+    mut q_draggable: Query<(&mut Transform, &mut Tile, &mut Draggable), Without<Dragged>>,
     mut grid: ResMut<Grid>,
 ) {
-    for (drag_trans, mut drag) in &mut q_dragged {
+    for (drag_trans, mut drag_tile, mut drag) in &mut q_dragged {
         let coords = Coords::from_vec2(drag_trans.translation.truncate());
         if let Some(entity) = grid.get_coords(coords) {
-            if let Ok((mut other_trans, mut other_drag)) = q_draggable.get_mut(entity) {
+            if let Ok((mut other_trans, mut other_tile, mut other_drag)) = q_draggable.get_mut(entity) {
                 grid.swap(Coords::from_vec2(drag.home.truncate()), coords);
 
-                // bug: Tile.coords don't get updated
                 let temp = other_drag.home;
 
                 other_trans.translation = drag.home;
                 other_drag.home = drag.home;
-
                 drag.home = temp;
 
-                // need to also swap in the grid
+                let temp = other_tile.coords;
 
-                // grid.tiles.swap(a, b)
+                other_tile.coords = drag_tile.coords;
+                drag_tile.coords = temp;
             }
         }
     }

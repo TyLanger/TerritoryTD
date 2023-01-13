@@ -48,8 +48,8 @@ fn check_max(
                             material: materials.add(ColorMaterial::from(Color::GOLD)),
                             transform: Transform::from_translation(Vec3::new(
                                 0.0,
-                                1.0 * i as f32,
-                                0.1 * i as f32,
+                                1.0 * (1 + i) as f32,
+                                0.1 * (1 + i) as f32,
                             )),
                             ..default()
                         })
